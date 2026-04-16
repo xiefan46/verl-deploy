@@ -31,11 +31,15 @@ FA_WHEEL_CACHE="${CACHE_DIR}/wheels"              # flash-attn wheel 缓存
 VERL_ROOT="${1:-/root/verl}"                      # verl 仓库路径（可通过参数传入）
 PYTHON_VER="3.12"
 
+# 全路径，避免 conda activate 在非交互 shell 中不生效
+PY="${ENV_DIR}/bin/python"
+PIP="${ENV_DIR}/bin/pip"
+
 # ─── 检查 verl 仓库 ───
 [ -d "$VERL_ROOT" ] || err "verl 仓库不存在: $VERL_ROOT (用法: bash setup_env.sh /path/to/verl)"
 
-installed() { "${ENV_DIR}/bin/python" -c "import $1" 2>/dev/null; }
-has_pkg()   { "${ENV_DIR}/bin/python" -c "import importlib.metadata; importlib.metadata.version('$1')" 2>/dev/null; }
+installed() { "$PY" -c "import $1" 2>/dev/null; }
+has_pkg()   { "$PY" -c "import importlib.metadata; importlib.metadata.version('$1')" 2>/dev/null; }
 
 # ─── 系统工具 ───
 export DEBIAN_FRONTEND=noninteractive
@@ -58,18 +62,16 @@ if ! command -v conda &>/dev/null && [ ! -f "${CONDA_DIR}/bin/conda" ]; then
     rm -f "$INSTALLER"
 fi
 export PATH="${CONDA_DIR}/bin:$PATH"
-eval "$(conda shell.bash hook)"
 
 # ─── 快速路径：环境已在本地（重入同一容器） ───
 if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
     log "环境已存在于本地，直接激活"
-    conda activate "$ENV_NAME"
 
     # 重新链接 verl（代码可能有更新）
-    pip install --no-deps -e "$VERL_ROOT" --quiet
+    $PIP install --no-deps -e "$VERL_ROOT" --quiet
 
     log "验证环境..."
-    python -c "
+    $PY -c "
 import torch; print(f'PyTorch: {torch.__version__}')
 assert torch.cuda.is_available(), 'CUDA not available!'
 print(f'CUDA: {torch.version.cuda}, GPU: {torch.cuda.get_device_name(0)}')
@@ -89,21 +91,19 @@ if [ -f "$ENV_ARCHIVE" ] && [ ! -d "$ENV_DIR" ] && [ "${FORCE_INSTALL:-}" != "1"
     zstd -d "$ENV_ARCHIVE" --stdout | tar xf - -C "$ENV_DIR"
     log "环境解压完成 (${SECONDS}s)"
 
-    conda activate "$ENV_NAME"
-
     # 重新以 editable 模式链接 verl（代码可能有更新）
     log "重新链接 verl..."
-    pip install --no-deps -e "$VERL_ROOT" --quiet
+    $PIP install --no-deps -e "$VERL_ROOT" --quiet
 
     # 准备数据
     if [ ! -f ~/data/gsm8k/train.parquet ]; then
         log "准备 GSM8K 数据..."
         mkdir -p ~/data/gsm8k
-        python "$VERL_ROOT/examples/data_preprocess/gsm8k.py" --local_save_dir ~/data/gsm8k
+        $PY "$VERL_ROOT/examples/data_preprocess/gsm8k.py" --local_save_dir ~/data/gsm8k
     fi
 
     log "验证环境..."
-    python -c "
+    $PY -c "
 import torch
 print(f'PyTorch: {torch.__version__}')
 assert torch.cuda.is_available(), 'CUDA not available!'
@@ -135,15 +135,14 @@ if [ ! -d "$ENV_DIR" ] || [ "${FORCE_INSTALL:-}" = "1" ]; then
 else
     log "[1/6] conda 环境已存在，跳过"
 fi
-conda activate "$ENV_NAME"
 
 # [2/6] PyTorch + vLLM + 基础依赖
 log "[2/6] 安装 PyTorch + vLLM + 基础依赖..."
-installed torch  && log "  torch 已安装: $(python -c 'import torch;print(torch.__version__)'), 跳过" || pip install torch torchvision torchaudio
-installed vllm   && log "  vllm 已安装，跳过"          || pip install vllm
-installed ray    && log "  ray 已安装，跳过"            || pip install "ray[default]"
-installed tensordict && log "  tensordict 已安装，跳过"  || pip install "tensordict>=0.8.0,<=0.10.0,!=0.9.0"
-pip install -r "$VERL_ROOT/requirements.txt" --quiet
+installed torch  && log "  torch 已安装: $($PY -c 'import torch;print(torch.__version__)'), 跳过" || $PIP install torch torchvision torchaudio
+installed vllm   && log "  vllm 已安装，跳过"          || $PIP install vllm
+installed ray    && log "  ray 已安装，跳过"            || $PIP install "ray[default]"
+installed tensordict && log "  tensordict 已安装，跳过"  || $PIP install "tensordict>=0.8.0,<=0.10.0,!=0.9.0"
+$PIP install -r "$VERL_ROOT/requirements.txt" --quiet
 
 # [3/6] flash-attn
 log "[3/6] 安装 flash-attn..."
@@ -153,30 +152,30 @@ else
     LOCAL_WHL=$(ls ${FA_WHEEL_CACHE}/flash_attn-*.whl 2>/dev/null | head -1 || true)
     if [ -n "$LOCAL_WHL" ]; then
         log "  从缓存安装: $LOCAL_WHL"
-        pip install --no-cache-dir "$LOCAL_WHL"
+        $PIP install --no-cache-dir "$LOCAL_WHL"
     else
-        PY_VER=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
-        TORCH_VER=$(python -c "import torch; print(torch.__version__.split('+')[0].rsplit('.',1)[0])")
-        CXX11_ABI=$(python -c "import torch; print('TRUE' if torch._C._GLIBCXX_USE_CXX11_ABI else 'FALSE')")
+        PY_VER=$($PY -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
+        TORCH_VER=$($PY -c "import torch; print(torch.__version__.split('+')[0].rsplit('.',1)[0])")
+        CXX11_ABI=$($PY -c "import torch; print('TRUE' if torch._C._GLIBCXX_USE_CXX11_ABI else 'FALSE')")
         WHEEL="flash_attn-2.7.3+cu12torch${TORCH_VER}cxx11abi${CXX11_ABI}-${PY_VER}-${PY_VER}-linux_x86_64.whl"
         WHEEL_URL="https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.3/${WHEEL}"
         log "  尝试下载预编译 wheel: ${WHEEL}"
-        wget -nv "${WHEEL_URL}" && pip install --no-cache-dir "${WHEEL}" && rm -f "${WHEEL}" \
-            || { log "  预编译 wheel 不可用，源码编译..."; MAX_JOBS=8 pip install flash-attn --no-build-isolation; }
+        wget -nv "${WHEEL_URL}" && $PIP install --no-cache-dir "${WHEEL}" && rm -f "${WHEEL}" \
+            || { log "  预编译 wheel 不可用，源码编译..."; MAX_JOBS=8 $PIP install flash-attn --no-build-isolation; }
         mkdir -p "$FA_WHEEL_CACHE"
-        pip wheel flash-attn --no-build-isolation --no-deps -w "$FA_WHEEL_CACHE" 2>/dev/null || true
+        $PIP wheel flash-attn --no-build-isolation --no-deps -w "$FA_WHEEL_CACHE" 2>/dev/null || true
     fi
 fi
 
 # [4/6] 安装 verl
 log "[4/6] 安装 verl..."
-installed verl && log "  verl 已安装，跳过" || pip install --no-deps -e "$VERL_ROOT"
+installed verl && log "  verl 已安装，跳过" || $PIP install --no-deps -e "$VERL_ROOT"
 
 # [5/6] 准备数据
 log "[5/6] 准备 GSM8K 数据..."
 if [ ! -f ~/data/gsm8k/train.parquet ]; then
     mkdir -p ~/data/gsm8k
-    python "$VERL_ROOT/examples/data_preprocess/gsm8k.py" --local_save_dir ~/data/gsm8k
+    $PY "$VERL_ROOT/examples/data_preprocess/gsm8k.py" --local_save_dir ~/data/gsm8k
 else
     log "  GSM8K 数据已存在，跳过"
 fi
@@ -196,7 +195,7 @@ fi
 
 # 验证
 log "验证环境..."
-python -c "
+$PY -c "
 import torch
 print(f'PyTorch: {torch.__version__}')
 assert torch.cuda.is_available(), 'CUDA not available!'
