@@ -41,6 +41,14 @@ PIP="${ENV_DIR}/bin/pip"
 installed() { "$PY" -c "import $1" 2>/dev/null; }
 has_pkg()   { "$PY" -c "import importlib.metadata; importlib.metadata.version('$1')" 2>/dev/null; }
 
+# flash-attn 完整性校验：metadata 存在 + C 扩展可加载
+fa_ok() {
+    "$PY" -c "
+from flash_attn.flash_attn_interface import flash_attn_func
+print('flash-attn C extension OK')
+" 2>/dev/null
+}
+
 # ─── 系统工具 ───
 export DEBIAN_FRONTEND=noninteractive
 NEED_PKGS=""
@@ -167,9 +175,15 @@ $PIP install -r "$VERL_ROOT/requirements.txt" --quiet
 
 # [3/6] flash-attn
 log "[3/6] 安装 flash-attn..."
-if has_pkg flash_attn; then
-    log "  flash-attn 已安装，跳过"
+if fa_ok; then
+    log "  flash-attn 已安装且 C 扩展完好，跳过"
 else
+    # 清理可能的残留（中断编译留下的不完整安装）
+    if has_pkg flash_attn; then
+        warn "flash-attn metadata 存在但 C 扩展加载失败，清理残留重装..."
+        $PIP uninstall -y flash-attn 2>/dev/null || true
+    fi
+
     LOCAL_WHL=$(ls ${FA_WHEEL_CACHE}/flash_attn-*.whl 2>/dev/null | head -1 || true)
     if [ -n "$LOCAL_WHL" ]; then
         log "  从缓存安装: $LOCAL_WHL"
@@ -182,10 +196,27 @@ else
         WHEEL_URL="https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.3/${WHEEL}"
         log "  尝试下载预编译 wheel: ${WHEEL}"
         wget -nv "${WHEEL_URL}" && $PIP install --no-cache-dir "${WHEEL}" && rm -f "${WHEEL}" \
-            || { log "  预编译 wheel 不可用，源码编译..."; MAX_JOBS=8 $PIP install flash-attn --no-build-isolation; }
+            || {
+                log "  预编译 wheel 不可用，源码编译（verbose 模式，可能需要 10-20 分钟）..."
+                FA_START=$SECONDS
+                MAX_JOBS=8 $PIP install flash-attn --no-build-isolation -v 2>&1 \
+                    | while IFS= read -r line; do
+                        # 只打印编译关键行：进入新文件 / 链接 / 错误 / 警告
+                        case "$line" in
+                            *"building"*|*"Building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"error"*|*"Error"*|*"warning:"*)
+                                echo -e "${GREEN}[fa-build $(( SECONDS - FA_START ))s]${RESET} $line"
+                                ;;
+                        esac
+                    done
+                FA_TIME=$((SECONDS - FA_START))
+                log "  源码编译完成 (${FA_TIME}s)"
+            }
         mkdir -p "$FA_WHEEL_CACHE"
         $PIP wheel flash-attn --no-build-isolation --no-deps -w "$FA_WHEEL_CACHE" 2>/dev/null || true
     fi
+
+    # 最终校验
+    fa_ok || err "flash-attn 安装失败：C 扩展无法加载，请检查 CUDA 版本和编译日志"
 fi
 
 # [4/6] 安装 verl
