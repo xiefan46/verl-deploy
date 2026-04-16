@@ -63,6 +63,12 @@ if ! command -v conda &>/dev/null && [ ! -f "${CONDA_DIR}/bin/conda" ]; then
 fi
 export PATH="${CONDA_DIR}/bin:$PATH"
 
+# ─── 初始化 conda（让 conda activate 在用户 shell 中可用） ───
+if ! grep -q "conda initialize" ~/.bashrc 2>/dev/null; then
+    log "初始化 conda (写入 ~/.bashrc)..."
+    conda init bash --quiet >/dev/null 2>&1
+fi
+
 # ─── 快速路径：环境已在本地（重入同一容器） ───
 if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
     log "环境已存在于本地，直接激活"
@@ -94,7 +100,8 @@ import vllm; print(f'vLLM: {vllm.__version__}')
 import verl; print('verl: OK')
 print('\n=== All checks passed! ===')
 "
-    echo -e "\n${BOLD}${GREEN}  环境已就绪（本地已存在）${RESET}\n"
+    echo -e "\n${BOLD}${GREEN}  环境已就绪（本地已存在）${RESET}"
+    echo -e "${YELLOW}激活环境: source ~/.bashrc && conda activate ${ENV_NAME}${RESET}\n"
     exit 0
 fi
 
@@ -130,8 +137,7 @@ print('\n=== All checks passed! ===')
     echo -e "\n${BOLD}${GREEN}========================================${RESET}"
     echo -e "${BOLD}${GREEN}  环境已从缓存恢复! (${SECONDS}s)${RESET}"
     echo -e "${BOLD}${GREEN}========================================${RESET}"
-    echo -e "\n${YELLOW}激活环境:${RESET}"
-    echo -e "${GREEN}   conda activate ${ENV_NAME}${RESET}\n"
+    echo -e "\n${YELLOW}激活环境: source ~/.bashrc && conda activate ${ENV_NAME}${RESET}\n"
     exit 0
 fi
 
@@ -243,7 +249,7 @@ ${BOLD}${GREEN}  Setup complete! (${TOTAL_TIME}s)${RESET}
 ${BOLD}${GREEN}========================================${RESET}
 
 ${YELLOW}# 激活环境:${RESET}
-${GREEN}   conda activate ${ENV_NAME}${RESET}
+${GREEN}   source ~/.bashrc && conda activate ${ENV_NAME}${RESET}
 
 ${YELLOW}# 启动 tmux:${RESET}
 ${GREEN}   tmux new -s verl${RESET}
