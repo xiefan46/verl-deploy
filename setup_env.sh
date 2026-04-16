@@ -44,7 +44,7 @@ command -v tmux &>/dev/null || NEED_PKGS="tmux"
 command -v zstd &>/dev/null || NEED_PKGS="${NEED_PKGS} zstd"
 if [ -n "$NEED_PKGS" ]; then
     log "安装系统工具:${NEED_PKGS}..."
-    apt-get update && apt-get install -y ${NEED_PKGS}
+    apt-get install -y ${NEED_PKGS} 2>/dev/null || { apt-get update && apt-get install -y ${NEED_PKGS}; }
 else
     log "系统工具已就绪"
 fi
