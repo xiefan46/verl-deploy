@@ -70,6 +70,21 @@ if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
     # 重新链接 verl（代码可能有更新）
     $PIP install --no-deps -e "$VERL_ROOT" --quiet
 
+    # 准备数据（可能上次没跑完）
+    if [ ! -f ~/data/gsm8k/train.parquet ]; then
+        log "准备 GSM8K 数据..."
+        mkdir -p ~/data/gsm8k
+        $PY "$VERL_ROOT/examples/data_preprocess/gsm8k.py" --local_save_dir ~/data/gsm8k
+    fi
+
+    # 压缩缓存（可能上次没跑到这一步）
+    if [ -d "/workspace" ] && [ ! -f "$ENV_ARCHIVE" ]; then
+        log "压缩环境到 Network Volume..."
+        mkdir -p "$CACHE_DIR"
+        tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -o "$ENV_ARCHIVE"
+        log "  压缩完成: $(du -sh "$ENV_ARCHIVE" | cut -f1)"
+    fi
+
     log "验证环境..."
     $PY -c "
 import torch; print(f'PyTorch: {torch.__version__}')
