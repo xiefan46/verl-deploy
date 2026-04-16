@@ -22,7 +22,10 @@ bash /root/verl-deploy/setup_env.sh /root/verl
 # 3. 激活环境（首次需要 source bashrc，新终端则直接 conda activate 即可）
 source ~/.bashrc && conda activate verl
 
-# 4. 开始训练
+# 4. 用 tmux 防止断连
+tmux new -s verl
+
+# 5. 跑最小示例验证（Qwen2-0.5B + LoRA + GRPO on GSM8K，单卡 H100）
 bash /root/verl/examples/tuning/0.5b/qwen2-0.5b_grpo-lora_1_h100_fsdp_vllm.sh
 ```
 
