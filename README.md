@@ -13,7 +13,7 @@ RunPod 一键部署 verl 训练环境。
 
 ```bash
 # 1. Clone 仓库
-git clone -b hello_world https://github.com/xiefan46/verl.git /root/verl
+git clone -b async-genrm https://github.com/xiefan46/verl.git /root/verl
 git clone https://github.com/xiefan46/verl-deploy.git /root/verl-deploy
 
 # 2. 一键部署（首次会完整安装，后续自动从缓存恢复）
