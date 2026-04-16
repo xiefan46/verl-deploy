@@ -38,9 +38,16 @@ installed() { "${ENV_DIR}/bin/python" -c "import $1" 2>/dev/null; }
 has_pkg()   { "${ENV_DIR}/bin/python" -c "import importlib.metadata; importlib.metadata.version('$1')" 2>/dev/null; }
 
 # ─── 系统工具 ───
-log "安装系统工具..."
-command -v tmux &>/dev/null || { apt-get update -qq && apt-get install -y -qq tmux zstd > /dev/null; }
-command -v zstd &>/dev/null || { apt-get update -qq && apt-get install -y -qq zstd > /dev/null; }
+export DEBIAN_FRONTEND=noninteractive
+NEED_PKGS=""
+command -v tmux &>/dev/null || NEED_PKGS="tmux"
+command -v zstd &>/dev/null || NEED_PKGS="${NEED_PKGS} zstd"
+if [ -n "$NEED_PKGS" ]; then
+    log "安装系统工具:${NEED_PKGS}..."
+    apt-get update && apt-get install -y ${NEED_PKGS}
+else
+    log "系统工具已就绪"
+fi
 
 # ─── 安装 conda (如果不存在) ───
 if ! command -v conda &>/dev/null && [ ! -f "${CONDA_DIR}/bin/conda" ]; then
