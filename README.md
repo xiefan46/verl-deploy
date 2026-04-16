@@ -19,8 +19,8 @@ git clone https://github.com/xiefan46/verl-deploy.git /root/verl-deploy
 # 2. 一键部署（首次会完整安装，后续自动从缓存恢复）
 bash /root/verl-deploy/setup_env.sh /root/verl
 
-# 3. 激活环境
-conda activate verl
+# 3. 激活环境（首次需要 source bashrc，新终端则直接 conda activate 即可）
+source ~/.bashrc && conda activate verl
 
 # 4. 开始训练
 bash /root/verl/examples/tuning/0.5b/qwen2-0.5b_grpo-lora_1_h100_fsdp_vllm.sh
