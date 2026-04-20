@@ -39,6 +39,43 @@ bash setup_env.sh /path/to/verl
 FORCE_INSTALL=1 bash setup_env.sh /root/verl
 ```
 
+## 监控
+
+### Ray Dashboard
+
+在本地终端建立 SSH 端口转发，然后浏览器打开 `http://localhost:8265`：
+
+```bash
+ssh -L 8265:localhost:8265 root@<host> -p <port> -i ~/.ssh/id_ed25519
+```
+
+可以在 Actors 页面查看各角色的 GPU 分配和状态。
+
+### Wandb
+
+```bash
+# 远程机器上安装并登录（一次性）
+pip install wandb
+wandb login  # 按提示粘贴 API key
+
+# 跑训练时加上 wandb logger
+bash tests/special_e2e/run_fully_async_policy_genrm.sh \
+    trainer.logger='["console","wandb"]' \
+    trainer.project_name='async-genrm-test' \
+    rollout.total_rollout_steps=10000
+```
+
+训练开始后终端会打印 wandb run 链接，在本地浏览器打开即可看到实时曲线。
+
+### GPU 使用
+
+```bash
+# 远程机器上查看各卡占用
+nvidia-smi
+# 持续监控
+watch -n 1 nvidia-smi
+```
+
 ## 环境说明
 
 - **Python**: 3.12 (conda via Miniforge)
