@@ -88,6 +88,7 @@ if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
     installed pytest    || $PIP install pytest pytest-asyncio --quiet
     installed wandb     || $PIP install wandb --quiet
     installed qwen_vl_utils || $PIP install qwen-vl-utils --quiet
+    installed mathruler     || $PIP install mathruler --quiet
 
     # 准备数据（可能上次没跑完）
     if [ ! -f ~/data/gsm8k/train.parquet ]; then
@@ -134,6 +135,7 @@ if [ -f "$ENV_ARCHIVE" ] && [ ! -d "$ENV_DIR" ] && [ "${FORCE_INSTALL:-}" != "1"
     installed pytest    || $PIP install pytest pytest-asyncio --quiet
     installed wandb     || $PIP install wandb --quiet
     installed qwen_vl_utils || $PIP install qwen-vl-utils --quiet
+    installed mathruler     || $PIP install mathruler --quiet
 
     # 准备数据
     if [ ! -f ~/data/gsm8k/train.parquet ]; then
