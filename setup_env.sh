@@ -85,8 +85,9 @@ if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
     $PIP install --no-deps -e "$VERL_ROOT" --quiet
 
     # 确保开发/测试工具已安装（旧缓存可能缺少）
-    installed pytest || $PIP install pytest pytest-asyncio --quiet
-    installed wandb  || $PIP install wandb --quiet
+    installed pytest    || $PIP install pytest pytest-asyncio --quiet
+    installed wandb     || $PIP install wandb --quiet
+    installed qwen_vl_utils || $PIP install qwen-vl-utils --quiet
 
     # 准备数据（可能上次没跑完）
     if [ ! -f ~/data/gsm8k/train.parquet ]; then
@@ -130,8 +131,9 @@ if [ -f "$ENV_ARCHIVE" ] && [ ! -d "$ENV_DIR" ] && [ "${FORCE_INSTALL:-}" != "1"
     $PIP install --no-deps -e "$VERL_ROOT" --quiet
 
     # 确保开发/测试工具已安装（旧缓存可能缺少）
-    installed pytest || $PIP install pytest pytest-asyncio --quiet
-    installed wandb  || $PIP install wandb --quiet
+    installed pytest    || $PIP install pytest pytest-asyncio --quiet
+    installed wandb     || $PIP install wandb --quiet
+    installed qwen_vl_utils || $PIP install qwen-vl-utils --quiet
 
     # 准备数据
     if [ ! -f ~/data/gsm8k/train.parquet ]; then
@@ -182,6 +184,7 @@ installed tensordict && log "  tensordict 已安装，跳过"  || $PIP install "
 installed pytest  && log "  pytest 已安装，跳过"          || $PIP install pytest pytest-asyncio
 installed cupy    && log "  cupy 已安装，跳过"            || $PIP install cupy-cuda12x
 installed wandb   && log "  wandb 已安装，跳过"           || $PIP install wandb
+installed qwen_vl_utils && log "  qwen-vl-utils 已安装，跳过" || $PIP install qwen-vl-utils
 $PIP install -r "$VERL_ROOT/requirements.txt" --quiet
 
 # 修复 libstdc++ CXXABI 版本不足（conda env 的版本比系统新，需要优先加载）
