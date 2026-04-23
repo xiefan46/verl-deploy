@@ -90,6 +90,10 @@ if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
     installed qwen_vl_utils || $PIP install qwen-vl-utils --quiet
     installed mathruler     || $PIP install mathruler --quiet
 
+    # Megatron 训练依赖（mbridge + megatron-core）
+    installed mbridge       || { log "安装 mbridge..."; $PIP install --force-reinstall git+https://github.com/ISEEKYAN/mbridge.git --quiet; }
+    installed megatron.core || { log "安装 megatron-core..."; $PIP install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@dev --quiet; }
+
     # 准备数据（可能上次没跑完）
     if [ ! -f ~/data/gsm8k/train.parquet ]; then
         log "准备 GSM8K 数据..."
@@ -136,6 +140,10 @@ if [ -f "$ENV_ARCHIVE" ] && [ ! -d "$ENV_DIR" ] && [ "${FORCE_INSTALL:-}" != "1"
     installed wandb     || $PIP install wandb --quiet
     installed qwen_vl_utils || $PIP install qwen-vl-utils --quiet
     installed mathruler     || $PIP install mathruler --quiet
+
+    # Megatron 训练依赖（mbridge + megatron-core）
+    installed mbridge       || { log "安装 mbridge..."; $PIP install --force-reinstall git+https://github.com/ISEEKYAN/mbridge.git --quiet; }
+    installed megatron.core || { log "安装 megatron-core..."; $PIP install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@dev --quiet; }
 
     # 准备数据
     if [ ! -f ~/data/gsm8k/train.parquet ]; then
@@ -188,6 +196,11 @@ installed cupy    && log "  cupy 已安装，跳过"            || $PIP install 
 installed wandb   && log "  wandb 已安装，跳过"           || $PIP install wandb
 installed qwen_vl_utils && log "  qwen-vl-utils 已安装，跳过" || $PIP install qwen-vl-utils
 $PIP install -r "$VERL_ROOT/requirements.txt" --quiet
+
+# Megatron 训练依赖
+log "  安装 mbridge + megatron-core..."
+$PIP install --force-reinstall git+https://github.com/ISEEKYAN/mbridge.git --quiet
+installed megatron.core && log "  megatron-core 已安装，跳过" || $PIP install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@dev --quiet
 
 # 修复 libstdc++ CXXABI 版本不足（conda env 的版本比系统新，需要优先加载）
 ENV_LIBCXX="${ENV_DIR}/lib/libstdc++.so.6"
