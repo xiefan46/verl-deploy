@@ -49,6 +49,69 @@ print('flash-attn C extension OK')
 " 2>/dev/null
 }
 
+# Transformer Engine 完整性校验
+te_ok() {
+    "$PY" -c "
+import transformer_engine
+import transformer_engine.pytorch
+print('transformer-engine OK')
+" 2>/dev/null
+}
+
+# Apex 完整性校验
+apex_ok() {
+    "$PY" -c "
+import apex
+from apex.normalization.fused_layer_norm import FusedLayerNorm
+print('apex OK')
+" 2>/dev/null
+}
+
+# ─── Megatron 依赖安装（共享函数，三个路径复用） ───
+install_megatron_deps() {
+    installed mbridge       || { log "安装 mbridge..."; $PIP install --force-reinstall git+https://github.com/ISEEKYAN/mbridge.git --quiet; }
+    installed megatron.core || { log "安装 megatron-core..."; $PIP install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@dev --quiet; }
+
+    if ! te_ok; then
+        log "安装 Transformer Engine v2.2.1（源码编译，约 10-20 分钟）..."
+        $PIP install ninja --quiet 2>/dev/null || true
+        export NVTE_FRAMEWORK=pytorch
+        TE_START=$SECONDS
+        $PIP install --no-deps --no-cache-dir --no-build-isolation git+https://github.com/NVIDIA/TransformerEngine.git@v2.2.1 2>&1 \
+            | while IFS= read -r line; do
+                case "$line" in
+                    *"building"*|*"Building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"error"*|*"Error"*)
+                        echo -e "${GREEN}[te-build $(( SECONDS - TE_START ))s]${RESET} $line"
+                        ;;
+                esac
+            done
+        TE_TIME=$((SECONDS - TE_START))
+        log "  Transformer Engine 编译完成 (${TE_TIME}s)"
+    else
+        log "  Transformer Engine 已安装，跳过"
+    fi
+
+    if ! apex_ok; then
+        log "安装 Apex（源码编译，约 5-10 分钟）..."
+        APEX_START=$SECONDS
+        $PIP install -v --no-cache-dir --no-build-isolation \
+            --config-settings "--build-option=--cpp_ext" \
+            --config-settings "--build-option=--cuda_ext" \
+            git+https://github.com/NVIDIA/apex.git 2>&1 \
+            | while IFS= read -r line; do
+                case "$line" in
+                    *"building"*|*"Building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"error"*|*"Error"*)
+                        echo -e "${GREEN}[apex-build $(( SECONDS - APEX_START ))s]${RESET} $line"
+                        ;;
+                esac
+            done
+        APEX_TIME=$((SECONDS - APEX_START))
+        log "  Apex 编译完成 (${APEX_TIME}s)"
+    else
+        log "  Apex 已安装，跳过"
+    fi
+}
+
 # ─── 系统工具 ───
 export DEBIAN_FRONTEND=noninteractive
 NEED_PKGS=""
@@ -90,9 +153,8 @@ if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
     installed qwen_vl_utils || $PIP install qwen-vl-utils --quiet
     installed mathruler     || $PIP install mathruler --quiet
 
-    # Megatron 训练依赖（mbridge + megatron-core）
-    installed mbridge       || { log "安装 mbridge..."; $PIP install --force-reinstall git+https://github.com/ISEEKYAN/mbridge.git --quiet; }
-    installed megatron.core || { log "安装 megatron-core..."; $PIP install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@dev --quiet; }
+    # Megatron 训练依赖（mbridge + megatron-core + TE + Apex）
+    install_megatron_deps
 
     # 准备数据（可能上次没跑完）
     if [ ! -f ~/data/gsm8k/train.parquet ]; then
@@ -101,12 +163,14 @@ if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
         $PY "$VERL_ROOT/examples/data_preprocess/gsm8k.py" --local_save_dir ~/data/gsm8k
     fi
 
-    # 压缩缓存（可能上次没跑到这一步）
-    if [ -d "/workspace" ] && [ ! -f "$ENV_ARCHIVE" ]; then
-        log "压缩环境到 Network Volume..."
-        mkdir -p "$CACHE_DIR"
-        tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -o "$ENV_ARCHIVE"
-        log "  压缩完成: $(du -sh "$ENV_ARCHIVE" | cut -f1)"
+    # 压缩缓存（可能上次没跑到这一步，或者新装了 TE/Apex 需要更新缓存）
+    if [ -d "/workspace" ]; then
+        if [ ! -f "$ENV_ARCHIVE" ] || ! te_ok 2>/dev/null; then
+            log "压缩环境到 Network Volume..."
+            mkdir -p "$CACHE_DIR"
+            tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -o "$ENV_ARCHIVE"
+            log "  压缩完成: $(du -sh "$ENV_ARCHIVE" | cut -f1)"
+        fi
     fi
 
     log "验证环境..."
@@ -116,6 +180,8 @@ assert torch.cuda.is_available(), 'CUDA not available!'
 print(f'CUDA: {torch.version.cuda}, GPU: {torch.cuda.get_device_name(0)}')
 import vllm; print(f'vLLM: {vllm.__version__}')
 import verl; print('verl: OK')
+import transformer_engine; print(f'TE: {transformer_engine.__version__}')
+import apex; print('Apex: OK')
 print('\n=== All checks passed! ===')
 "
     echo -e "\n${BOLD}${GREEN}  环境已就绪（本地已存在）${RESET}"
@@ -141,9 +207,15 @@ if [ -f "$ENV_ARCHIVE" ] && [ ! -d "$ENV_DIR" ] && [ "${FORCE_INSTALL:-}" != "1"
     installed qwen_vl_utils || $PIP install qwen-vl-utils --quiet
     installed mathruler     || $PIP install mathruler --quiet
 
-    # Megatron 训练依赖（mbridge + megatron-core）
-    installed mbridge       || { log "安装 mbridge..."; $PIP install --force-reinstall git+https://github.com/ISEEKYAN/mbridge.git --quiet; }
-    installed megatron.core || { log "安装 megatron-core..."; $PIP install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@dev --quiet; }
+    # Megatron 训练依赖（mbridge + megatron-core + TE + Apex）
+    install_megatron_deps
+
+    # 如果新装了 TE/Apex，更新缓存
+    if [ -d "/workspace" ]; then
+        log "更新缓存（包含 TE + Apex）..."
+        tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -o "$ENV_ARCHIVE"
+        log "  缓存更新完成: $(du -sh "$ENV_ARCHIVE" | cut -f1)"
+    fi
 
     # 准备数据
     if [ ! -f ~/data/gsm8k/train.parquet ]; then
@@ -160,6 +232,8 @@ assert torch.cuda.is_available(), 'CUDA not available!'
 print(f'CUDA: {torch.version.cuda}, GPU: {torch.cuda.get_device_name(0)}')
 import vllm; print(f'vLLM: {vllm.__version__}')
 import verl; print('verl: OK')
+import transformer_engine; print(f'TE: {transformer_engine.__version__}')
+import apex; print('Apex: OK')
 print('\n=== All checks passed! ===')
 "
     echo -e "\n${BOLD}${GREEN}========================================${RESET}"
@@ -173,20 +247,20 @@ fi
 log "开始完整安装..."
 SECONDS=0
 
-# [1/6] 创建 conda 环境
+# [1/8] 创建 conda 环境
 if [ ! -d "$ENV_DIR" ] || [ "${FORCE_INSTALL:-}" = "1" ]; then
     if [ -d "$ENV_DIR" ]; then
-        log "[1/6] 删除旧环境..."
+        log "[1/8] 删除旧环境..."
         conda env remove -y -n "$ENV_NAME" --quiet 2>/dev/null || rm -rf "$ENV_DIR"
     fi
-    log "[1/6] 创建 conda 环境 (Python ${PYTHON_VER})..."
+    log "[1/8] 创建 conda 环境 (Python ${PYTHON_VER})..."
     conda create -y -n "$ENV_NAME" python="${PYTHON_VER}" --quiet
 else
-    log "[1/6] conda 环境已存在，跳过"
+    log "[1/8] conda 环境已存在，跳过"
 fi
 
-# [2/6] PyTorch + vLLM + 基础依赖
-log "[2/6] 安装 PyTorch + vLLM + 基础依赖..."
+# [2/8] PyTorch + vLLM + 基础依赖
+log "[2/8] 安装 PyTorch + vLLM + 基础依赖..."
 installed torch  && log "  torch 已安装: $($PY -c 'import torch;print(torch.__version__)'), 跳过" || $PIP install torch torchvision torchaudio
 installed vllm   && log "  vllm 已安装，跳过"          || $PIP install vllm
 installed ray    && log "  ray 已安装，跳过"            || $PIP install "ray[default]"
@@ -197,11 +271,6 @@ installed wandb   && log "  wandb 已安装，跳过"           || $PIP install 
 installed qwen_vl_utils && log "  qwen-vl-utils 已安装，跳过" || $PIP install qwen-vl-utils
 $PIP install -r "$VERL_ROOT/requirements.txt" --quiet
 
-# Megatron 训练依赖
-log "  安装 mbridge + megatron-core..."
-$PIP install --force-reinstall git+https://github.com/ISEEKYAN/mbridge.git --quiet
-installed megatron.core && log "  megatron-core 已安装，跳过" || $PIP install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@dev --quiet
-
 # 修复 libstdc++ CXXABI 版本不足（conda env 的版本比系统新，需要优先加载）
 ENV_LIBCXX="${ENV_DIR}/lib/libstdc++.so.6"
 if [ -f "$ENV_LIBCXX" ]; then
@@ -209,8 +278,8 @@ if [ -f "$ENV_LIBCXX" ]; then
     log "  已设置 LD_LIBRARY_PATH 优先使用 conda env 的 libstdc++"
 fi
 
-# [3/6] flash-attn
-log "[3/6] 安装 flash-attn..."
+# [3/8] flash-attn
+log "[3/8] 安装 flash-attn..."
 if fa_ok; then
     log "  flash-attn 已安装且 C 扩展完好，跳过"
 else
@@ -276,12 +345,19 @@ else:
     fa_ok || err "flash-attn 安装失败：C 扩展无法加载，请检查 CUDA 版本和编译日志"
 fi
 
-# [4/6] 安装 verl
-log "[4/6] 安装 verl..."
+# [4/8] Transformer Engine + Apex（源码编译，需要 GPU）
+log "[4/8] 安装 Transformer Engine + Apex..."
+install_megatron_deps
+
+# [5/8] Megatron-LM + mbridge（已在 install_megatron_deps 中安装）
+log "[5/8] Megatron 依赖已安装"
+
+# [6/8] 安装 verl
+log "[6/8] 安装 verl..."
 installed verl && log "  verl 已安装，跳过" || $PIP install --no-deps -e "$VERL_ROOT"
 
-# [5/6] 准备数据
-log "[5/6] 准备 GSM8K 数据..."
+# [7/8] 准备数据
+log "[7/8] 准备 GSM8K 数据..."
 if [ ! -f ~/data/gsm8k/train.parquet ]; then
     mkdir -p ~/data/gsm8k
     $PY "$VERL_ROOT/examples/data_preprocess/gsm8k.py" --local_save_dir ~/data/gsm8k
@@ -289,9 +365,9 @@ else
     log "  GSM8K 数据已存在，跳过"
 fi
 
-# [6/6] 压缩环境到 Network Volume
+# [8/8] 压缩环境到 Network Volume
 if [ -d "/workspace" ]; then
-    log "[6/6] 压缩环境到 Network Volume..."
+    log "[8/8] 压缩环境到 Network Volume（包含 TE + Apex，后续启动免编译）..."
     mkdir -p "$CACHE_DIR"
     PACK_START=$SECONDS
     tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -o "$ENV_ARCHIVE"
@@ -299,7 +375,7 @@ if [ -d "/workspace" ]; then
     ARCHIVE_SIZE=$(du -sh "$ENV_ARCHIVE" | cut -f1)
     log "  压缩完成: ${ARCHIVE_SIZE} (${PACK_TIME}s)"
 else
-    warn "[6/6] /workspace 不存在（非 RunPod 环境），跳过缓存"
+    warn "[8/8] /workspace 不存在（非 RunPod 环境），跳过缓存"
 fi
 
 # 验证
@@ -323,6 +399,18 @@ try:
 except importlib.metadata.PackageNotFoundError:
     print('flash-attn: NOT INSTALLED')
 
+import transformer_engine
+print(f'Transformer Engine: {transformer_engine.__version__}')
+
+import apex
+print('Apex: OK')
+
+import megatron.core
+print('Megatron-Core: OK')
+
+import mbridge
+print('mbridge: OK')
+
 import os
 assert os.path.exists(os.path.expanduser('~/data/gsm8k/train.parquet')), 'GSM8K data missing!'
 print('GSM8K data: OK')
@@ -342,9 +430,9 @@ ${GREEN}   source ~/.bashrc && conda activate ${ENV_NAME}${RESET}
 ${YELLOW}# 启动 tmux:${RESET}
 ${GREEN}   tmux new -s verl${RESET}
 
-${YELLOW}# 开始训练:${RESET}
-${GREEN}   bash ${VERL_ROOT}/examples/tuning/0.5b/qwen2-0.5b_grpo-lora_1_h100_fsdp_vllm.sh${RESET}
+${YELLOW}# Weight Sync Benchmark (6×H100):${RESET}
+${GREEN}   cd /root/verl && bash tests/special_e2e/run_weight_sync_benchmark.sh${RESET}
 
 ${YELLOW}# 后续启动只需:${RESET}
-${GREEN}   bash setup_env.sh  # 自动从缓存恢复 (~1min)${RESET}
+${GREEN}   bash setup_env.sh  # 自动从缓存恢复 (~1min，TE/Apex 已编译好)${RESET}
 "
