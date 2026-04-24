@@ -69,32 +69,21 @@ print('apex OK')
 
 # ─── Megatron 依赖安装（共享函数，三个路径复用） ───
 install_megatron_deps() {
-    installed mbridge       || { log "安装 mbridge..."; $PIP install --force-reinstall git+https://github.com/ISEEKYAN/mbridge.git --quiet; }
-    installed megatron.core || { log "安装 megatron-core..."; $PIP install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@dev --quiet; }
+    # Versions pinned to match official verl Docker image
+    local MBRIDGE_REF="641a5a0"
+    local MEGATRON_REF="core_v0.16.0"
+    local TE_REF="release_v2.12"
 
-    if ! te_ok; then
-        log "安装 Transformer Engine v2.2.1（源码编译，约 10-20 分钟）..."
-        $PIP install ninja --quiet 2>/dev/null || true
-        export NVTE_FRAMEWORK=pytorch
-        TE_START=$SECONDS
-        $PIP install --no-deps --no-cache-dir --no-build-isolation git+https://github.com/NVIDIA/TransformerEngine.git@v2.2.1 2>&1 \
-            | while IFS= read -r line; do
-                case "$line" in
-                    *"building"*|*"Building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"error"*|*"Error"*)
-                        echo -e "${GREEN}[te-build $(( SECONDS - TE_START ))s]${RESET} $line"
-                        ;;
-                esac
-            done
-        TE_TIME=$((SECONDS - TE_START))
-        log "  Transformer Engine 编译完成 (${TE_TIME}s)"
-    else
-        log "  Transformer Engine 已安装，跳过"
-    fi
+    installed mbridge       || { log "安装 mbridge (@${MBRIDGE_REF})..."; $PIP install --force-reinstall git+https://github.com/ISEEKYAN/mbridge.git@${MBRIDGE_REF} --quiet; }
+    installed megatron.core || { log "安装 megatron-core (${MEGATRON_REF})..."; $PIP install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@${MEGATRON_REF} --quiet; }
 
     if ! apex_ok; then
         log "安装 Apex（源码编译，约 5-10 分钟）..."
+        # nvidia-mathdx required by Apex (per official Dockerfile)
+        $PIP install nvidia-mathdx ninja --quiet 2>/dev/null || true
         APEX_START=$SECONDS
-        $PIP install -v --no-cache-dir --no-build-isolation \
+        NCPU=$(nproc 2>/dev/null || echo 8)
+        MAX_JOBS=$NCPU $PIP install -v --no-cache-dir --no-build-isolation \
             --config-settings "--build-option=--cpp_ext" \
             --config-settings "--build-option=--cuda_ext" \
             git+https://github.com/NVIDIA/apex.git 2>&1 \
@@ -110,6 +99,27 @@ install_megatron_deps() {
     else
         log "  Apex 已安装，跳过"
     fi
+
+    if ! te_ok; then
+        log "安装 Transformer Engine (${TE_REF})（源码编译，约 10-20 分钟）..."
+        $PIP install ninja --quiet 2>/dev/null || true
+        export NVTE_FRAMEWORK=pytorch
+        TE_START=$SECONDS
+        NCPU=$(nproc 2>/dev/null || echo 8)
+        MAX_JOBS=$NCPU NVTE_BUILD_THREADS_PER_JOB=4 \
+        $PIP install --no-build-isolation git+https://github.com/NVIDIA/TransformerEngine.git@${TE_REF} 2>&1 \
+            | while IFS= read -r line; do
+                case "$line" in
+                    *"building"*|*"Building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"error"*|*"Error"*)
+                        echo -e "${GREEN}[te-build $(( SECONDS - TE_START ))s]${RESET} $line"
+                        ;;
+                esac
+            done
+        TE_TIME=$((SECONDS - TE_START))
+        log "  Transformer Engine 编译完成 (${TE_TIME}s)"
+    else
+        log "  Transformer Engine 已安装，跳过"
+    fi
 }
 
 # ─── 系统工具 ───
@@ -120,7 +130,14 @@ command -v zstd  &>/dev/null || NEED_PKGS="${NEED_PKGS} zstd"
 command -v cmake &>/dev/null || NEED_PKGS="${NEED_PKGS} cmake"
 command -v ninja &>/dev/null || NEED_PKGS="${NEED_PKGS} ninja-build"
 # cuDNN dev headers required by Transformer Engine compilation
-[ -f /usr/include/cudnn.h ] || [ -f /usr/local/cuda/include/cudnn.h ] || NEED_PKGS="${NEED_PKGS} libcudnn-dev"
+if ! [ -f /usr/include/cudnn.h ] && ! [ -f /usr/local/cuda/include/cudnn.h ] && ! [ -f /usr/include/x86_64-linux-gnu/cudnn_v9.h ]; then
+    log "安装 cuDNN (via NVIDIA repo)..."
+    ARCH=$(if [ "$(uname -m)" = "aarch64" ]; then echo "sbsa"; else echo "x86_64"; fi)
+    wget -q "https://developer.download.nvidia.com/compute/cuda/repos/debian12/${ARCH}/cuda-keyring_1.1-1_all.deb" -O /tmp/cuda-keyring.deb
+    dpkg -i /tmp/cuda-keyring.deb && rm -f /tmp/cuda-keyring.deb
+    apt-get update
+    apt-get install -y cudnn
+fi
 if [ -n "$NEED_PKGS" ]; then
     log "安装系统工具:${NEED_PKGS}..."
     apt-get install -y ${NEED_PKGS} 2>/dev/null || { apt-get update && apt-get install -y ${NEED_PKGS}; }
