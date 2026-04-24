@@ -314,48 +314,30 @@ else
         $PIP uninstall -y flash-attn 2>/dev/null || true
     fi
 
-    LOCAL_WHL=$(ls ${FA_WHEEL_CACHE}/flash_attn-*.whl 2>/dev/null | head -1 || true)
+    LOCAL_WHL=$(ls ${FA_WHEEL_CACHE}/flash_attn-*cp3*.whl 2>/dev/null | head -1 || true)
     if [ -n "$LOCAL_WHL" ]; then
         log "  从缓存安装: $LOCAL_WHL"
         $PIP install --no-cache-dir "$LOCAL_WHL"
     else
-        # Try source install directly (matches official Dockerfile: flash_attn==2.8.3)
-        {
-                # 自动检测 GPU 架构，只编译需要的 sm 版本（避免编译 sm_80+sm_90 全量组合）
-                GPU_ARCH=$($PY -c "
-import torch
-if torch.cuda.is_available():
-    cap = torch.cuda.get_device_capability()
-    print(f'{cap[0]}.{cap[1]}')
-else:
-    print('')
-" 2>/dev/null)
-                if [ -n "$GPU_ARCH" ]; then
-                    export TORCH_CUDA_ARCH_LIST="$GPU_ARCH"
-                    log "  检测到 GPU 架构: sm_${GPU_ARCH//./}，仅编译该架构"
-                fi
+        # Source build matching official Dockerfile approach
+        $PIP install ninja --quiet 2>/dev/null || true
+        NCPU=$(nproc 2>/dev/null || echo 8)
+        NJOBS=$((NCPU > 32 ? 32 : NCPU))
 
-                # 安装 ninja 以启用并行 .cu 编译（distutils 串行，ninja 并行）
-                $PIP install ninja --quiet 2>/dev/null || true
+        log "  源码编译 flash-attn 2.8.3（MAX_JOBS=${NJOBS}）..."
+        FA_START=$SECONDS
+        export FLASH_ATTENTION_FORCE_BUILD=TRUE
+        MAX_JOBS=$NJOBS $PIP install --no-build-isolation --resume-retries 5 flash_attn==2.8.3 -v 2>&1 \
+            | while IFS= read -r line; do
+                case "$line" in
+                    *"building"*|*"Building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"error"*|*"Error"*)
+                        echo -e "${GREEN}[fa-build $(( SECONDS - FA_START ))s]${RESET} $line"
+                        ;;
+                esac
+            done
+        FA_TIME=$((SECONDS - FA_START))
+        log "  源码编译完成 (${FA_TIME}s)"
 
-                # 根据 CPU 核数设置并行编译任务数
-                NCPU=$(nproc 2>/dev/null || echo 8)
-                NJOBS=$((NCPU > 16 ? 16 : NCPU))
-
-                log "  源码编译 flash-attn 2.8.3（MAX_JOBS=${NJOBS}，ARCH=${GPU_ARCH:-all}）..."
-                FA_START=$SECONDS
-                MAX_JOBS=$NJOBS $PIP install flash-attn==2.8.3 --no-build-isolation -v 2>&1 \
-                    | while IFS= read -r line; do
-                        # 只打印编译关键行：进入新文件 / 链接 / 错误 / 警告
-                        case "$line" in
-                            *"building"*|*"Building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"error"*|*"Error"*|*"warning:"*)
-                                echo -e "${GREEN}[fa-build $(( SECONDS - FA_START ))s]${RESET} $line"
-                                ;;
-                        esac
-                    done
-                FA_TIME=$((SECONDS - FA_START))
-                log "  源码编译完成 (${FA_TIME}s)"
-            }
         mkdir -p "$FA_WHEEL_CACHE"
         $PIP wheel flash-attn==2.8.3 --no-build-isolation --no-deps -w "$FA_WHEEL_CACHE" 2>/dev/null || true
     fi
