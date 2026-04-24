@@ -86,10 +86,17 @@ install_megatron_deps() {
         $PIP install nvidia-mathdx ninja --quiet 2>/dev/null || true
         APEX_START=$SECONDS
         NCPU=$(nproc 2>/dev/null || echo 8)
+        # Clone and patch setup.py to skip CUDA version mismatch check
+        # (RunPod: system CUDA 12.9 vs PyTorch compiled with CUDA 12.8)
+        APEX_TMP="/tmp/apex_build"
+        rm -rf "$APEX_TMP"
+        git clone --depth 1 https://github.com/NVIDIA/apex.git "$APEX_TMP"
+        # Comment out the version check RuntimeError
+        sed -i 's/raise RuntimeError("Cuda extensions are being compiled/pass  # raise RuntimeError("Cuda extensions are being compiled/' "$APEX_TMP/setup.py"
         MAX_JOBS=$NCPU $PIP install -v --no-cache-dir --no-build-isolation \
             --config-settings "--build-option=--cpp_ext" \
             --config-settings "--build-option=--cuda_ext" \
-            git+https://github.com/NVIDIA/apex.git 2>&1 \
+            "$APEX_TMP" 2>&1 \
             | while IFS= read -r line; do
                 case "$line" in
                     *"building"*|*"Building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"error"*|*"Error"*)
