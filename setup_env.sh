@@ -119,6 +119,8 @@ command -v tmux  &>/dev/null || NEED_PKGS="tmux"
 command -v zstd  &>/dev/null || NEED_PKGS="${NEED_PKGS} zstd"
 command -v cmake &>/dev/null || NEED_PKGS="${NEED_PKGS} cmake"
 command -v ninja &>/dev/null || NEED_PKGS="${NEED_PKGS} ninja-build"
+# cuDNN dev headers required by Transformer Engine compilation
+[ -f /usr/include/cudnn.h ] || [ -f /usr/local/cuda/include/cudnn.h ] || NEED_PKGS="${NEED_PKGS} libcudnn-dev"
 if [ -n "$NEED_PKGS" ]; then
     log "安装系统工具:${NEED_PKGS}..."
     apt-get install -y ${NEED_PKGS} 2>/dev/null || { apt-get update && apt-get install -y ${NEED_PKGS}; }
