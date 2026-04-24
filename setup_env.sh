@@ -11,6 +11,9 @@
 #
 # 依赖版本参考: https://github.com/verl-project/verl/blob/main/docker/Dockerfile.stable.vllm
 # 修改依赖前务必对照官方 Dockerfile 确保版本一致。
+#
+# RunPod 基础镜像: runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
+# 已包含: Python 3.11, PyTorch 2.8.0 (cu128), CUDA 12.8.1 devel, cuDNN
 set -euo pipefail
 
 BOLD='\033[1m'
@@ -32,7 +35,7 @@ CACHE_DIR="/workspace/verl_cache"                # Network Volume 缓存目录
 ENV_ARCHIVE="${CACHE_DIR}/verl_env.tar.zst"      # 压缩包路径
 FA_WHEEL_CACHE="${CACHE_DIR}/wheels"              # flash-attn wheel 缓存
 VERL_ROOT="${1:-/root/verl}"                      # verl 仓库路径（可通过参数传入）
-PYTHON_VER="3.12"
+PYTHON_VER="3.11"
 
 # 全路径，避免 conda activate 在非交互 shell 中不生效
 PY="${ENV_DIR}/bin/python"
@@ -86,17 +89,10 @@ install_megatron_deps() {
         $PIP install nvidia-mathdx ninja --quiet 2>/dev/null || true
         APEX_START=$SECONDS
         NCPU=$(nproc 2>/dev/null || echo 8)
-        # Clone and patch setup.py to skip CUDA version mismatch check
-        # (RunPod: system CUDA 12.9 vs PyTorch compiled with CUDA 12.8)
-        APEX_TMP="/tmp/apex_build"
-        rm -rf "$APEX_TMP"
-        git clone --depth 1 https://github.com/NVIDIA/apex.git "$APEX_TMP"
-        # Comment out the version check RuntimeError
-        sed -i 's/raise RuntimeError("Cuda extensions are being compiled/pass  # raise RuntimeError("Cuda extensions are being compiled/' "$APEX_TMP/setup.py"
         MAX_JOBS=$NCPU $PIP install -v --no-cache-dir --no-build-isolation \
             --config-settings "--build-option=--cpp_ext" \
             --config-settings "--build-option=--cuda_ext" \
-            "$APEX_TMP" 2>&1 \
+            git+https://github.com/NVIDIA/apex.git 2>&1 \
             | while IFS= read -r line; do
                 case "$line" in
                     *"building"*|*"Building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"error"*|*"Error"*)
@@ -139,15 +135,7 @@ command -v tmux  &>/dev/null || NEED_PKGS="tmux"
 command -v zstd  &>/dev/null || NEED_PKGS="${NEED_PKGS} zstd"
 command -v cmake &>/dev/null || NEED_PKGS="${NEED_PKGS} cmake"
 command -v ninja &>/dev/null || NEED_PKGS="${NEED_PKGS} ninja-build"
-# cuDNN dev headers required by Transformer Engine compilation
-if ! [ -f /usr/include/cudnn.h ] && ! [ -f /usr/local/cuda/include/cudnn.h ] && ! [ -f /usr/include/x86_64-linux-gnu/cudnn_v9.h ]; then
-    log "安装 cuDNN (via NVIDIA repo)..."
-    ARCH=$(if [ "$(uname -m)" = "aarch64" ]; then echo "sbsa"; else echo "x86_64"; fi)
-    wget -q "https://developer.download.nvidia.com/compute/cuda/repos/debian12/${ARCH}/cuda-keyring_1.1-1_all.deb" -O /tmp/cuda-keyring.deb
-    dpkg -i /tmp/cuda-keyring.deb && rm -f /tmp/cuda-keyring.deb
-    apt-get update
-    apt-get install -y cudnn
-fi
+# cuDNN: already included in runpod/pytorch devel image
 if [ -n "$NEED_PKGS" ]; then
     log "安装系统工具:${NEED_PKGS}..."
     apt-get install -y ${NEED_PKGS} 2>/dev/null || { apt-get update && apt-get install -y ${NEED_PKGS}; }
@@ -292,7 +280,7 @@ fi
 
 # [2/8] PyTorch + vLLM + 基础依赖
 log "[2/8] 安装 PyTorch + vLLM + 基础依赖..."
-installed torch  && log "  torch 已安装: $($PY -c 'import torch;print(torch.__version__)'), 跳过" || $PIP install torch torchvision torchaudio
+installed torch  && log "  torch 已安装: $($PY -c 'import torch;print(torch.__version__)'), 跳过" || $PIP install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 installed vllm   && log "  vllm 已安装，跳过"          || $PIP install vllm
 installed ray    && log "  ray 已安装，跳过"            || $PIP install "ray[default]"
 installed tensordict && log "  tensordict 已安装，跳过"  || $PIP install "tensordict>=0.8.0,<=0.10.0,!=0.9.0"

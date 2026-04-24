@@ -2,6 +2,12 @@
 
 RunPod 一键部署 verl 训练环境。
 
+## RunPod 基础镜像
+
+使用 `runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04`
+
+创建 Pod 时在 Docker Image 处填入此镜像名（已包含 PyTorch 2.8.0 + CUDA 12.8.1 + cuDNN）。
+
 ## 策略
 
 | 场景 | 行为 | 耗时 |
