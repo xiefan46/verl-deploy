@@ -8,6 +8,9 @@
 # 用法: bash setup_env.sh [verl_repo_path]
 # 强制重装: FORCE_INSTALL=1 bash setup_env.sh [verl_repo_path]
 # 默认 verl 路径: /root/verl
+#
+# 依赖版本参考: https://github.com/verl-project/verl/blob/main/docker/Dockerfile.stable.vllm
+# 修改依赖前务必对照官方 Dockerfile 确保版本一致。
 set -euo pipefail
 
 BOLD='\033[1m'

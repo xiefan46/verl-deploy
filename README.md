@@ -95,4 +95,5 @@ watch -n 1 nvidia-smi
 - **环境位置**: `/opt/conda/envs/verl` (Container Disk，高速 IO)
 - **缓存位置**: `/workspace/verl_cache/verl_env.tar.zst` (Network Volume，跨重启持久化)
 - **verl 安装方式**: editable install (`pip install --no-deps -e .`)，修改代码无需重装
-- **Megatron 依赖**: mbridge + megatron-core（自动安装）
+- **Megatron 依赖**: mbridge + megatron-core + Transformer Engine + Apex（自动编译安装）
+- **依赖版本参考**: [verl 官方 Dockerfile](https://github.com/verl-project/verl/blob/main/docker/Dockerfile.stable.vllm)，修改依赖前务必对照确保一致
