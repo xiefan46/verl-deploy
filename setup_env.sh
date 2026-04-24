@@ -187,7 +187,7 @@ if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
         if [ ! -f "$ENV_ARCHIVE" ] || ! te_ok 2>/dev/null; then
             log "压缩环境到 Network Volume..."
             mkdir -p "$CACHE_DIR"
-            tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -o "$ENV_ARCHIVE"
+            tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -f -o "$ENV_ARCHIVE"
             log "  压缩完成: $(du -sh "$ENV_ARCHIVE" | cut -f1)"
         fi
     fi
@@ -232,7 +232,7 @@ if [ -f "$ENV_ARCHIVE" ] && [ ! -d "$ENV_DIR" ] && [ "${FORCE_INSTALL:-}" != "1"
     # 如果新装了 TE/Apex，更新缓存
     if [ -d "/workspace" ]; then
         log "更新缓存（包含 TE + Apex）..."
-        tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -o "$ENV_ARCHIVE"
+        tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -f -o "$ENV_ARCHIVE"
         log "  缓存更新完成: $(du -sh "$ENV_ARCHIVE" | cut -f1)"
     fi
 
@@ -368,7 +368,7 @@ if [ -d "/workspace" ]; then
     log "[8/8] 压缩环境到 Network Volume（包含 TE + Apex，后续启动免编译）..."
     mkdir -p "$CACHE_DIR"
     PACK_START=$SECONDS
-    tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -o "$ENV_ARCHIVE"
+    tar cf - -C "$ENV_DIR" . | zstd -T0 -3 -f -o "$ENV_ARCHIVE"
     PACK_TIME=$((SECONDS - PACK_START))
     ARCHIVE_SIZE=$(du -sh "$ENV_ARCHIVE" | cut -f1)
     log "  压缩完成: ${ARCHIVE_SIZE} (${PACK_TIME}s)"
