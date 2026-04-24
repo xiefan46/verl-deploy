@@ -321,13 +321,10 @@ else
     else
         # Source build matching official Dockerfile approach
         $PIP install ninja --quiet 2>/dev/null || true
-        NCPU=$(nproc 2>/dev/null || echo 8)
-        NJOBS=$((NCPU > 32 ? 32 : NCPU))
 
-        log "  源码编译 flash-attn 2.8.3（MAX_JOBS=${NJOBS}）..."
+        log "  源码编译 flash-attn 2.8.3（MAX_JOBS=4）..."
         FA_START=$SECONDS
-        export FLASH_ATTENTION_FORCE_BUILD=TRUE
-        MAX_JOBS=$NJOBS $PIP install --no-build-isolation --resume-retries 5 flash_attn==2.8.3 -v 2>&1 \
+        MAX_JOBS=4 $PIP install --no-build-isolation flash_attn==2.8.3 -v 2>&1 \
             | while IFS= read -r line; do
                 case "$line" in
                     *"building"*|*"Building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"error"*|*"Error"*)
