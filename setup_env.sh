@@ -313,14 +313,8 @@ else
         log "  从缓存安装: $LOCAL_WHL"
         $PIP install --no-cache-dir "$LOCAL_WHL"
     else
-        PY_VER=$($PY -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
-        TORCH_VER=$($PY -c "import torch; print(torch.__version__.split('+')[0].rsplit('.',1)[0])")
-        CXX11_ABI=$($PY -c "import torch; print('TRUE' if torch._C._GLIBCXX_USE_CXX11_ABI else 'FALSE')")
-        WHEEL="flash_attn-2.7.3+cu12torch${TORCH_VER}cxx11abi${CXX11_ABI}-${PY_VER}-${PY_VER}-linux_x86_64.whl"
-        WHEEL_URL="https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.3/${WHEEL}"
-        log "  尝试下载预编译 wheel: ${WHEEL}"
-        wget -nv "${WHEEL_URL}" && $PIP install --no-cache-dir "${WHEEL}" && rm -f "${WHEEL}" \
-            || {
+        # Try source install directly (matches official Dockerfile: flash_attn==2.8.3)
+        {
                 # 自动检测 GPU 架构，只编译需要的 sm 版本（避免编译 sm_80+sm_90 全量组合）
                 GPU_ARCH=$($PY -c "
 import torch
@@ -342,9 +336,9 @@ else:
                 NCPU=$(nproc 2>/dev/null || echo 8)
                 NJOBS=$((NCPU > 16 ? 16 : NCPU))
 
-                log "  预编译 wheel 不可用，源码编译（MAX_JOBS=${NJOBS}，ARCH=${GPU_ARCH:-all}）..."
+                log "  源码编译 flash-attn 2.8.3（MAX_JOBS=${NJOBS}，ARCH=${GPU_ARCH:-all}）..."
                 FA_START=$SECONDS
-                MAX_JOBS=$NJOBS $PIP install flash-attn --no-build-isolation -v 2>&1 \
+                MAX_JOBS=$NJOBS $PIP install flash-attn==2.8.3 --no-build-isolation -v 2>&1 \
                     | while IFS= read -r line; do
                         # 只打印编译关键行：进入新文件 / 链接 / 错误 / 警告
                         case "$line" in
@@ -357,7 +351,7 @@ else:
                 log "  源码编译完成 (${FA_TIME}s)"
             }
         mkdir -p "$FA_WHEEL_CACHE"
-        $PIP wheel flash-attn --no-build-isolation --no-deps -w "$FA_WHEEL_CACHE" 2>/dev/null || true
+        $PIP wheel flash-attn==2.8.3 --no-build-isolation --no-deps -w "$FA_WHEEL_CACHE" 2>/dev/null || true
     fi
 
     # 最终校验
