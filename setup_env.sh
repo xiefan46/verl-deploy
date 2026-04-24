@@ -115,8 +115,10 @@ install_megatron_deps() {
 # ─── 系统工具 ───
 export DEBIAN_FRONTEND=noninteractive
 NEED_PKGS=""
-command -v tmux &>/dev/null || NEED_PKGS="tmux"
-command -v zstd &>/dev/null || NEED_PKGS="${NEED_PKGS} zstd"
+command -v tmux  &>/dev/null || NEED_PKGS="tmux"
+command -v zstd  &>/dev/null || NEED_PKGS="${NEED_PKGS} zstd"
+command -v cmake &>/dev/null || NEED_PKGS="${NEED_PKGS} cmake"
+command -v ninja &>/dev/null || NEED_PKGS="${NEED_PKGS} ninja-build"
 if [ -n "$NEED_PKGS" ]; then
     log "安装系统工具:${NEED_PKGS}..."
     apt-get install -y ${NEED_PKGS} 2>/dev/null || { apt-get update && apt-get install -y ${NEED_PKGS}; }
