@@ -295,6 +295,8 @@ $PIP install codetiming mathruler pylatexenc cachetools nvtx matplotlib liger_ke
 $PIP install --no-deps trl==0.27.0 --quiet
 $PIP install transformers==5.3.0 --quiet
 $PIP install -r "$VERL_ROOT/requirements.txt" --quiet
+# Fix numpy version: cupy requires numpy>=2.0 but some deps downgrade it
+$PIP install "numpy>=2.0" --quiet
 
 # 修复 libstdc++ CXXABI 版本不足（conda env 的版本比系统新，需要优先加载）
 ENV_LIBCXX="${ENV_DIR}/lib/libstdc++.so.6"
