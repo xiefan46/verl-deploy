@@ -172,6 +172,9 @@ if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
     installed qwen_vl_utils || $PIP install qwen-vl-utils --quiet
     installed mathruler     || $PIP install mathruler --quiet
 
+    # Fix numpy: cupy requires numpy>=2.0
+    $PIP install "numpy>=2.0" --quiet
+
     # Megatron 训练依赖（mbridge + megatron-core + TE + Apex）
     install_megatron_deps
 
@@ -225,6 +228,9 @@ if [ -f "$ENV_ARCHIVE" ] && [ ! -d "$ENV_DIR" ] && [ "${FORCE_INSTALL:-}" != "1"
     installed wandb     || $PIP install wandb --quiet
     installed qwen_vl_utils || $PIP install qwen-vl-utils --quiet
     installed mathruler     || $PIP install mathruler --quiet
+
+    # Fix numpy: cupy requires numpy>=2.0
+    $PIP install "numpy>=2.0" --quiet
 
     # Megatron 训练依赖（mbridge + megatron-core + TE + Apex）
     install_megatron_deps
