@@ -280,14 +280,20 @@ fi
 
 # [2/8] PyTorch + vLLM + 基础依赖
 log "[2/8] 安装 PyTorch + vLLM + 基础依赖..."
+# Versions pinned to match official Dockerfile.stable.vllm
 installed torch  && log "  torch 已安装: $($PY -c 'import torch;print(torch.__version__)'), 跳过" || $PIP install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
-installed vllm   && log "  vllm 已安装，跳过"          || $PIP install vllm
+installed vllm   && log "  vllm 已安装，跳过"          || $PIP install vllm==0.18.0
 installed ray    && log "  ray 已安装，跳过"            || $PIP install "ray[default]"
 installed tensordict && log "  tensordict 已安装，跳过"  || $PIP install "tensordict>=0.8.0,<=0.10.0,!=0.9.0"
 installed pytest  && log "  pytest 已安装，跳过"          || $PIP install pytest pytest-asyncio
 installed cupy    && log "  cupy 已安装，跳过"            || $PIP install cupy-cuda12x
 installed wandb   && log "  wandb 已安装，跳过"           || $PIP install wandb
 installed qwen_vl_utils && log "  qwen-vl-utils 已安装，跳过" || $PIP install qwen-vl-utils
+# Additional deps from official Dockerfile
+$PIP install pybind11 wheel --quiet
+$PIP install codetiming mathruler pylatexenc cachetools nvtx matplotlib liger_kernel --quiet
+$PIP install --no-deps trl==0.27.0 --quiet
+$PIP install transformers==5.3.0 --quiet
 $PIP install -r "$VERL_ROOT/requirements.txt" --quiet
 
 # 修复 libstdc++ CXXABI 版本不足（conda env 的版本比系统新，需要优先加载）
