@@ -50,6 +50,77 @@ tmux new -s verl
 bash /root/verl/examples/tuning/0.5b/qwen2-0.5b_grpo-lora_1_h100_fsdp_vllm.sh
 ```
 
+### NCCL Suspend/Resume Profile（8×H100，单节点）
+
+```bash
+git clone -b feat/nccl-comm-suspend-resume https://github.com/xiefan46/verl.git /root/verl
+git clone https://github.com/xiefan46/verl-deploy.git /root/verl-deploy
+bash /root/verl-deploy/setup_env.sh
+source ~/.bashrc && conda activate verl
+bash /root/verl-deploy/upgrade_nccl.sh
+cd /root/verl && torchrun --nproc_per_node=8 tests/utils/test_nccl_suspend.py
+torchrun --nproc_per_node=8 tests/utils/profile_nccl_memory.py
+```
+
+### NCCL Profile 多节点（2×8 H100 Instant Cluster）
+
+创建 Instant Cluster 后，分别 SSH 到两台机器。
+
+**两台机器上分别执行（setup 阶段）：**
+
+```bash
+git clone -b feat/nccl-comm-suspend-resume https://github.com/xiefan46/verl.git /root/verl
+git clone https://github.com/xiefan46/verl-deploy.git /root/verl-deploy
+bash /root/verl-deploy/setup_env.sh
+source ~/.bashrc && conda activate verl
+bash /root/verl-deploy/upgrade_nccl.sh
+```
+
+**确认内部 IP（两台都执行）：**
+
+```bash
+ip addr show ens1 | grep 'inet '
+# 记下 Node 0 的 IP，假设是 10.0.0.1
+```
+
+**两台同时执行 torchrun（两个 SSH 窗口）：**
+
+```bash
+# Node 0:
+cd /root/verl && \
+NCCL_SOCKET_IFNAME=ens1 \
+torchrun --nproc_per_node=8 --nnodes=2 --node_rank=0 \
+  --master_addr=10.0.0.1 --master_port=29500 \
+  tests/utils/profile_nccl_memory.py
+
+# Node 1:
+cd /root/verl && \
+NCCL_SOCKET_IFNAME=ens1 \
+torchrun --nproc_per_node=8 --nnodes=2 --node_rank=1 \
+  --master_addr=10.0.0.1 --master_port=29500 \
+  tests/utils/profile_nccl_memory.py
+```
+
+注意事项：
+- 两边 torchrun 要几乎同时执行（先启动的会等另一边，默认超时 10 分钟）
+- 第一次跑可加 `NCCL_DEBUG=INFO` 确认走了 InfiniBand/RoCE
+- 如果 `ens1` 不对，用 `ip link show` 找高速网卡名
+- 跨节点的 NCCL network buffer 属于 `ncclMemPersist`（suspend 不会释放），这正是多节点测量的价值
+
+## 使用 SCP 缓存（无 Network Volume）
+
+如果没有 Network Volume，可以本地保存 `verl_env.tar.zst` 缓存，新机器 SCP 上去：
+
+```bash
+# 本地 → 新机器
+scp -P <PORT> -i ~/.ssh/id_ed25519 /path/to/verl_env.tar.zst root@<HOST>:/root/
+
+# 新机器上
+git clone ... /root/verl
+git clone ... /root/verl-deploy
+bash /root/verl-deploy/setup_env.sh  # 自动检测 /root/verl_env.tar.zst 并恢复
+```
+
 ## 选项
 
 ```bash
