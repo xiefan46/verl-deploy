@@ -100,12 +100,56 @@ else
     fi
 fi
 
-# ─── Step 3: 安装最新 NCCL ───
+# ─── Step 3: 安装兼容当前 CUDA driver 的 NCCL ───
 log ""
-log "Step 3: 从 NVIDIA 源安装最新 NCCL..."
+log "Step 3: 安装 NCCL (需要 >= 2.29.7 且兼容当前 CUDA driver)..."
+
+# 检测 CUDA driver 版本，选择兼容的 NCCL 包
+CUDA_DRIVER_VER=$($PY -c "
+import subprocess, re
+out = subprocess.check_output(['nvidia-smi'], text=True)
+m = re.search(r'CUDA Version:\s+(\d+)\.(\d+)', out)
+if m: print(f'{m.group(1)}.{m.group(2)}')
+else: print('unknown')
+" 2>/dev/null || echo "unknown")
+log "  CUDA driver 版本: $CUDA_DRIVER_VER"
 
 apt-get update -qq
-apt-get install -y --allow-change-held-packages libnccl2 libnccl-dev 2>&1 | tail -3
+
+# 找到 >= 2.29.7 且匹配 CUDA major 版本的最新 NCCL
+# CUDA 12.x driver → 优先选 cuda12.x 的包，避免 cuda13 的包
+CUDA_MAJOR=$(echo "$CUDA_DRIVER_VER" | cut -d. -f1)
+if [ "$CUDA_MAJOR" = "12" ]; then
+    # 找 cuda12.x 版本中 >= 2.29.7 的最新版
+    NCCL_PKG=$(apt-cache madison libnccl2 2>/dev/null \
+        | grep "cuda12\." \
+        | awk -F'|' '{print $2}' \
+        | tr -d ' ' \
+        | sort -V \
+        | while read ver; do
+            # 提取 NCCL 版本号 (e.g., 2.29.7 from 2.29.7-1+cuda12.9)
+            nccl_ver=$(echo "$ver" | grep -oP '^\d+\.\d+\.\d+')
+            major=$(echo "$nccl_ver" | cut -d. -f1)
+            minor=$(echo "$nccl_ver" | cut -d. -f2)
+            patch=$(echo "$nccl_ver" | cut -d. -f3)
+            num=$((major * 10000 + minor * 100 + patch))
+            if [ "$num" -ge 22907 ]; then
+                echo "$ver"
+            fi
+        done | tail -1)
+
+    if [ -n "$NCCL_PKG" ]; then
+        log "  选择 NCCL 版本: $NCCL_PKG (匹配 CUDA $CUDA_MAJOR)"
+        apt-get install -y --allow-downgrades --allow-change-held-packages \
+            "libnccl2=${NCCL_PKG}" "libnccl-dev=${NCCL_PKG}" 2>&1 | tail -3
+    else
+        warn "  未找到 cuda${CUDA_MAJOR} 的 NCCL >= 2.29.7，尝试安装最新版..."
+        apt-get install -y --allow-change-held-packages libnccl2 libnccl-dev 2>&1 | tail -3
+    fi
+else
+    log "  CUDA $CUDA_MAJOR，直接安装最新 NCCL..."
+    apt-get install -y --allow-change-held-packages libnccl2 libnccl-dev 2>&1 | tail -3
+fi
 
 NEW_SYSTEM_VER=$(dpkg -l libnccl2 2>/dev/null | grep ^ii | awk '{print $3}')
 log "  系统 NCCL 版本: $NEW_SYSTEM_VER"
