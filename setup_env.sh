@@ -33,6 +33,7 @@ ENV_NAME="verl"                                  # conda 环境名
 ENV_DIR="${CONDA_DIR}/envs/${ENV_NAME}"          # 环境路径
 CACHE_DIR="/workspace/verl_cache"                # Network Volume 缓存目录
 ENV_ARCHIVE="${CACHE_DIR}/verl_env.tar.zst"      # 压缩包路径
+SCP_ARCHIVE="/root/verl_env.tar.zst"            # SCP 上传的压缩包路径
 FA_WHEEL_CACHE="${CACHE_DIR}/wheels"              # flash-attn wheel 缓存
 VERL_ROOT="${1:-/root/verl}"                      # verl 仓库路径（可通过参数传入）
 PYTHON_VER="3.11"
@@ -220,6 +221,16 @@ print('\n=== All checks passed! ===')
     echo -e "\n${BOLD}${GREEN}  环境已就绪（本地已存在）${RESET}"
     echo -e "${YELLOW}激活环境: source ~/.bashrc && conda activate ${ENV_NAME}${RESET}\n"
     exit 0
+fi
+
+# ─── 快速路径：从 SCP 上传的压缩包恢复 ───
+# 用法: scp verl_env.tar.zst root@host:/root/ && bash setup_env.sh
+if [ -f "$SCP_ARCHIVE" ] && [ ! -d "$ENV_DIR" ] && [ "${FORCE_INSTALL:-}" != "1" ]; then
+    log "发现 SCP 压缩包: $SCP_ARCHIVE"
+    # 移动到标准缓存位置（后续逻辑统一用 ENV_ARCHIVE）
+    mkdir -p "$CACHE_DIR"
+    mv "$SCP_ARCHIVE" "$ENV_ARCHIVE"
+    log "  已移动到 $ENV_ARCHIVE"
 fi
 
 # ─── 快速路径：从缓存恢复（新容器，有缓存） ───
