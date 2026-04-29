@@ -168,46 +168,58 @@ fi
 log ""
 log "Step 5: 验证..."
 
-NEW_VER=$($PY -c "
+# NOTE: torch.cuda.nccl.version() 返回的是 PyTorch 编译时链接的版本号，
+# 替换 .so 不会改变此值。真正的验证应检查运行时加载的 .so 是否包含 ncclCommSuspend。
+
+COMPILE_VER=$($PY -c "
 import torch
 major, minor, patch = torch.cuda.nccl.version()
 print(f'{major}.{minor}.{patch}')
 " 2>/dev/null || echo "unknown")
 
-log "  PyTorch 报告的 NCCL: $CURRENT_VER → $NEW_VER"
+log "  PyTorch 编译时 NCCL 版本: $COMPILE_VER (不随 .so 替换改变，可忽略)"
 
-NEW_OK=$($PY -c "
-import torch
-major, minor, patch = torch.cuda.nccl.version()
-ver = major * 10000 + minor * 100 + patch
-print('yes' if ver >= 22907 else 'no')
-" 2>/dev/null || echo "unknown")
-
-# 用 ctypes 验证 ncclCommSuspend 可调
-CTYPES_OK=$($PY -c "
+# 用 ctypes 验证运行时加载的 libnccl 是否有 ncclCommSuspend
+CTYPES_RESULT=$($PY -c "
 import ctypes
 try:
     lib = ctypes.CDLL('libnccl.so.2')
-    if hasattr(lib, 'ncclCommSuspend'):
-        print('yes')
-    else:
-        print('no_symbol')
+    has_suspend = hasattr(lib, 'ncclCommSuspend')
+    has_resume = hasattr(lib, 'ncclCommResume')
+    # 尝试读取运行时版本
+    try:
+        ver_fn = lib.ncclGetVersion
+        ver_fn.argtypes = [ctypes.POINTER(ctypes.c_int)]
+        ver_fn.restype = ctypes.c_int
+        ver = ctypes.c_int(0)
+        ver_fn(ctypes.byref(ver))
+        v = ver.value
+        runtime_ver = f'{v // 10000}.{(v % 10000) // 100}.{v % 100}'
+    except Exception:
+        runtime_ver = 'unknown'
+    print(f'{has_suspend and has_resume}|{runtime_ver}')
 except Exception as e:
-    print(f'load_failed: {e}')
-" 2>/dev/null || echo "unknown")
+    print(f'False|load_failed: {e}')
+" 2>/dev/null || echo "False|unknown")
+
+CTYPES_OK=$(echo "$CTYPES_RESULT" | cut -d'|' -f1)
+RUNTIME_VER=$(echo "$CTYPES_RESULT" | cut -d'|' -f2)
+
+log "  运行时 NCCL 版本 (ncclGetVersion): $RUNTIME_VER"
+log "  ncclCommSuspend + ncclCommResume: $CTYPES_OK"
 
 echo ""
-if [ "$NEW_OK" = "yes" ] && [ "$CTYPES_OK" = "yes" ]; then
+if [ "$CTYPES_OK" = "True" ]; then
     echo -e "${GREEN}========================================${RESET}"
     echo -e "${GREEN}  ✅ NCCL 升级成功!${RESET}"
-    echo -e "${GREEN}  版本: $CURRENT_VER → $NEW_VER${RESET}"
-    echo -e "${GREEN}  ncclCommSuspend: 可用${RESET}"
+    echo -e "${GREEN}  运行时版本: $RUNTIME_VER${RESET}"
+    echo -e "${GREEN}  ncclCommSuspend/Resume: 可用${RESET}"
     echo -e "${GREEN}========================================${RESET}"
 else
     echo -e "${RED}========================================${RESET}"
     echo -e "${RED}  ❌ NCCL 升级未完全生效${RESET}"
-    echo -e "${RED}  torch.cuda.nccl.version: $NEW_VER (需要 >= 2.29.7)${RESET}"
-    echo -e "${RED}  ctypes ncclCommSuspend: $CTYPES_OK${RESET}"
+    echo -e "${RED}  运行时版本: $RUNTIME_VER${RESET}"
+    echo -e "${RED}  ncclCommSuspend/Resume: $CTYPES_OK${RESET}"
     echo -e "${RED}========================================${RESET}"
     echo ""
     echo "调试信息:"
