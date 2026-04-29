@@ -47,6 +47,17 @@ PIP="${ENV_DIR}/bin/pip"
 installed() { "$PY" -c "import $1" 2>/dev/null; }
 has_pkg()   { "$PY" -c "import importlib.metadata; importlib.metadata.version('$1')" 2>/dev/null; }
 
+# verl editable install + verification (reusable across all paths)
+install_verl() {
+    log "安装 verl (editable)..."
+    $PIP install --no-deps -e "$VERL_ROOT"
+    if ! installed verl; then
+        warn "verl import 失败，重试..."
+        $PIP install --no-deps --force-reinstall -e "$VERL_ROOT"
+    fi
+    installed verl || err "verl 安装失败，请检查 $VERL_ROOT"
+}
+
 # flash-attn 完整性校验：metadata 存在 + C 扩展可加载
 fa_ok() {
     "$PY" -c "
@@ -163,9 +174,6 @@ fi
 if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
     log "环境已存在于本地，直接激活"
 
-    # 重新链接 verl（代码可能有更新）
-    $PIP install --no-deps -e "$VERL_ROOT" --quiet
-
     # 确保开发/测试工具已安装（旧缓存可能缺少）
     installed pytest    || $PIP install pytest pytest-asyncio --quiet
     installed wandb     || $PIP install wandb --quiet
@@ -177,6 +185,9 @@ if [ -d "$ENV_DIR" ] && installed torch && [ "${FORCE_INSTALL:-}" != "1" ]; then
 
     # Megatron 训练依赖（mbridge + megatron-core + TE + Apex）
     install_megatron_deps
+
+    # verl editable install（放在所有依赖之后，避免被覆盖）
+    install_verl
 
     # 准备数据（可能上次没跑完）
     if [ ! -f ~/data/gsm8k/train.parquet ]; then
@@ -219,10 +230,6 @@ if [ -f "$ENV_ARCHIVE" ] && [ ! -d "$ENV_DIR" ] && [ "${FORCE_INSTALL:-}" != "1"
     zstd -d "$ENV_ARCHIVE" --stdout | tar xf - -C "$ENV_DIR"
     log "环境解压完成 (${SECONDS}s)"
 
-    # 重新以 editable 模式链接 verl（代码可能有更新）
-    log "重新链接 verl..."
-    $PIP install --no-deps -e "$VERL_ROOT" --quiet
-
     # 确保开发/测试工具已安装（旧缓存可能缺少）
     installed pytest    || $PIP install pytest pytest-asyncio --quiet
     installed wandb     || $PIP install wandb --quiet
@@ -234,6 +241,9 @@ if [ -f "$ENV_ARCHIVE" ] && [ ! -d "$ENV_DIR" ] && [ "${FORCE_INSTALL:-}" != "1"
 
     # Megatron 训练依赖（mbridge + megatron-core + TE + Apex）
     install_megatron_deps
+
+    # verl editable install（放在所有依赖之后，避免被覆盖）
+    install_verl
 
     # 如果新装了 TE/Apex，更新缓存
     if [ -d "/workspace" ]; then
@@ -358,9 +368,9 @@ install_megatron_deps
 # [5/8] Megatron-LM + mbridge（已在 install_megatron_deps 中安装）
 log "[5/8] Megatron 依赖已安装"
 
-# [6/8] 安装 verl
+# [6/8] 安装 verl（放在所有依赖之后，避免 TE/Apex 编译覆盖 egg-link）
 log "[6/8] 安装 verl..."
-installed verl && log "  verl 已安装，跳过" || $PIP install --no-deps -e "$VERL_ROOT"
+install_verl
 
 # [7/8] 准备数据
 log "[7/8] 准备 GSM8K 数据..."
