@@ -28,6 +28,34 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 
 替换 PyTorch 自带的 libnccl.so 为系统 apt 安装的最新版。验证用 ctypes `ncclGetVersion()`（不依赖 `torch.cuda.nccl.version()`，那是编译时版本）。
 
+## 常见问题
+
+### NCCL NVLS 报错 (8 卡 H100)
+
+```
+Failed to bind NVLink SHARP (NVLS) Multicast memory: CUDA error 1 'invalid argument'
+```
+
+原因：NCCL 2.29+ 在 H100 NVSwitch 上自动尝试 NVLS (硬件 multicast)，但 RunPod 的 Fabric Manager 可能未正确配置。加环境变量跳过：
+
+```bash
+NCCL_NVLS_ENABLE=0 torchrun --nproc_per_node=8 ...
+```
+
+不影响功能，只是退回普通 NVLink P2P 通信。
+
+### NCCL 版本与 CUDA driver 不兼容
+
+```
+CUDA driver version is insufficient for CUDA runtime version
+```
+
+原因：`upgrade_nccl.sh` 从 apt 装的 NCCL 可能是 cuda13.x 版本，而机器 driver 只支持 CUDA 12.x。脚本已自动检测 CUDA driver 版本选择兼容包，但如果仍出问题，手动指定：
+
+```bash
+apt-get install -y --allow-downgrades --allow-change-held-packages libnccl2=2.29.7-1+cuda12.9 libnccl-dev=2.29.7-1+cuda12.9
+```
+
 ## 多节点 (Instant Cluster)
 
 两台机器分别 setup 后，用 torchrun 的 `--nnodes`/`--node_rank`/`--master_addr` 参数协调。NCCL 需要指定高速网卡：`NCCL_SOCKET_IFNAME=ens1`。
