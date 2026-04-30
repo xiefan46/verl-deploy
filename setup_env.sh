@@ -140,6 +140,28 @@ install_megatron_deps() {
     fi
 }
 
+# ─── HuggingFace 登录（下载 gated models 需要） ───
+if [ -z "${HF_TOKEN:-}" ]; then
+    if [ ! -f "/workspace/.cache/huggingface/token" ] && [ ! -f "${HOME}/.cache/huggingface/token" ]; then
+        log "HuggingFace token 未设置。下载部分模型需要认证。"
+        read -rp "请输入 HF token（回车跳过）: " HF_TOKEN_INPUT
+        if [ -n "${HF_TOKEN_INPUT}" ]; then
+            export HF_TOKEN="${HF_TOKEN_INPUT}"
+            mkdir -p /workspace/.cache/huggingface
+            echo "${HF_TOKEN}" > /workspace/.cache/huggingface/token
+            log "  HF token 已保存"
+        else
+            warn "  跳过 HF 登录，部分模型可能无法下载"
+        fi
+    else
+        log "HuggingFace token 已存在，跳过登录"
+    fi
+else
+    log "HuggingFace token 已通过环境变量设置"
+    mkdir -p /workspace/.cache/huggingface
+    echo "${HF_TOKEN}" > /workspace/.cache/huggingface/token
+fi
+
 # ─── 系统工具 ───
 export DEBIAN_FRONTEND=noninteractive
 NEED_PKGS=""
