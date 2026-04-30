@@ -56,6 +56,25 @@ CUDA driver version is insufficient for CUDA runtime version
 apt-get install -y --allow-downgrades --allow-change-held-packages libnccl2=2.29.7-1+cuda12.9 libnccl-dev=2.29.7-1+cuda12.9
 ```
 
+### HF 模型权重下载失败 (mbridge Weights not found)
+
+```
+ValueError: Weights ['model.language_model.layers...'] not found in safetensors files
+```
+
+原因：HF 模型只下载了 config/tokenizer，safetensors 权重文件未下载（无认证或 Ray worker 子进程没读到 token）。手动下载：
+
+```bash
+export HF_HOME=/workspace/.cache/huggingface
+export HF_TOKEN=$(cat /workspace/.cache/huggingface/token)
+python -c "
+from huggingface_hub import snapshot_download
+snapshot_download('Qwen/Qwen3-VL-2B-Instruct')
+"
+```
+
+确认下载完整：`ls /workspace/.cache/huggingface/hub/models--Qwen--Qwen3-VL-2B-Instruct/snapshots/*/*.safetensors`
+
 ## 多节点 (Instant Cluster)
 
 两台机器分别 setup 后，用 torchrun 的 `--nnodes`/`--node_rank`/`--master_addr` 参数协调。NCCL 需要指定高速网卡：`NCCL_SOCKET_IFNAME=ens1`。
