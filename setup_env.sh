@@ -144,6 +144,7 @@ install_megatron_deps() {
 if [ -z "${HF_TOKEN:-}" ]; then
     if [ ! -f "/workspace/.cache/huggingface/token" ] && [ ! -f "${HOME}/.cache/huggingface/token" ]; then
         log "HuggingFace token 未设置。下载部分模型需要认证。"
+        log "获取 token: ${BOLD}https://huggingface.co/settings/tokens${RESET}"
         read -rp "请输入 HF token（回车跳过）: " HF_TOKEN_INPUT
         if [ -n "${HF_TOKEN_INPUT}" ]; then
             export HF_TOKEN="${HF_TOKEN_INPUT}"
