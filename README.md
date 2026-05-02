@@ -17,13 +17,14 @@ RunPod 一键部署 verl 训练环境。
 
 ## 快速开始
 
-### Fully Async OPD（6×H100，Multi-Teacher 蒸馏）
+### Fully Async OPD（8×H100，Multi-Teacher 蒸馏）
 
 ```bash
 git clone -b async-opd https://github.com/xiefan46/verl.git /root/verl
 git clone https://github.com/xiefan46/verl-deploy.git /root/verl-deploy
 bash /root/verl-deploy/setup_env.sh /root/verl
 source ~/.bashrc && conda activate verl
+bash /root/verl-deploy/download_models.sh
 tmux new -s verl
 bash /root/verl/tests/special_e2e/run_fully_async_policy_opd.sh
 ```
@@ -50,12 +51,25 @@ tmux new -s verl
 bash /root/verl/examples/tuning/0.5b/qwen2-0.5b_grpo-lora_1_h100_fsdp_vllm.sh
 ```
 
+### NCCL Suspend/Resume E2E（2×H100，Colocated GRPO）
+
+```bash
+git clone -b feat/nccl-comm-suspend-resume https://github.com/xiefan46/verl.git /root/verl
+git clone https://github.com/xiefan46/verl-deploy.git /root/verl-deploy
+bash /root/verl-deploy/setup_env.sh /root/verl
+source ~/.bashrc && conda activate verl
+bash /root/verl-deploy/upgrade_nccl.sh
+bash /root/verl-deploy/download_models.sh Qwen/Qwen2.5-0.5B-Instruct
+tmux new -s verl
+NCCL_NVLS_ENABLE=0 bash /root/verl/tests/special_e2e/run_nccl_suspend_e2e.sh
+```
+
 ### NCCL Suspend/Resume Profile（8×H100，单节点）
 
 ```bash
 git clone -b feat/nccl-comm-suspend-resume https://github.com/xiefan46/verl.git /root/verl
 git clone https://github.com/xiefan46/verl-deploy.git /root/verl-deploy
-bash /root/verl-deploy/setup_env.sh
+bash /root/verl-deploy/setup_env.sh /root/verl
 source ~/.bashrc && conda activate verl
 bash /root/verl-deploy/upgrade_nccl.sh
 cd /root/verl && torchrun --nproc_per_node=8 tests/utils/test_nccl_suspend.py

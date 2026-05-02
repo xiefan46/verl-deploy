@@ -8,6 +8,7 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 |------|------|
 | `setup_env.sh` | 一键搭建 verl conda 环境（含 PyTorch、vLLM、Megatron、TE、Apex） |
 | `upgrade_nccl.sh` | 升级 NCCL 到 2.29.7+ 以支持 ncclCommSuspend/Resume |
+| `download_models.sh` | 下载 HF 模型到本地，支持 Network Volume 缓存 |
 
 ## 环境配置
 
@@ -27,6 +28,26 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 ## upgrade_nccl.sh
 
 替换 PyTorch 自带的 libnccl.so 为系统 apt 安装的最新版。验证用 ctypes `ncclGetVersion()`（不依赖 `torch.cuda.nccl.version()`，那是编译时版本）。
+
+## download_models.sh
+
+下载 HF 模型到 `${HOME}/models/`，支持 Network Volume 缓存（`/workspace/models_cache/`）。
+
+三条路径（类似 setup_env.sh）：
+1. **本地已存在**（`${HOME}/models/` 有 safetensors）：跳过
+2. **Network Volume 有缓存**（`/workspace/models_cache/`）：复制到本地
+3. **都没有**：从 HuggingFace 下载 → 保存本地 → 缓存到 Network Volume
+
+```bash
+# 下载默认模型（Async OPD 用的 3 个模型）
+bash download_models.sh
+
+# 下载指定模型
+bash download_models.sh Qwen/Qwen2.5-0.5B-Instruct
+bash download_models.sh Qwen/Qwen3-VL-2B-Instruct Qwen/Qwen3-0.6B
+```
+
+首次运行会提示输入 HF token（从 https://huggingface.co/settings/tokens 获取）。
 
 ## 常见问题
 
