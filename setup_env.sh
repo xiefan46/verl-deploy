@@ -323,7 +323,8 @@ if [ ! -d "$ENV_DIR" ] || [ "${FORCE_INSTALL:-}" = "1" ]; then
         conda env remove -y -n "$ENV_NAME" --quiet 2>/dev/null || rm -rf "$ENV_DIR"
     fi
     log "[1/8] 创建 conda 环境 (Python ${PYTHON_VER})..."
-    conda create -y -n "$ENV_NAME" python="${PYTHON_VER}" --quiet
+    # Explicitly install pip — conda-forge python doesn't include it by default
+    conda create -y -n "$ENV_NAME" python="${PYTHON_VER}" pip --quiet
 else
     log "[1/8] conda 环境已存在，跳过"
 fi
