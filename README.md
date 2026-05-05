@@ -10,10 +10,15 @@ RunPod 一键部署 verl 训练环境。
 
 ## 策略
 
-| 场景 | 行为 | 耗时 |
-|------|------|------|
-| 首次安装 | 完整安装到 Container Disk → 压缩到 Network Volume | 20-30 min |
-| 后续启动 | 从 Network Volume 解压 → 激活 | ~1 min |
+环境缓存的 source of truth 是 **HF Hub dataset** (`xiefan46/verl-env-cache`，private)。
+
+| 场景 | 脚本 | 行为 | 耗时 |
+|------|------|------|------|
+| 重建 cache | `rebuild_env.sh` | 完整安装 → 打包 → 推送 HF Hub | ~25-35 min |
+| 日常启动 | `setup_env.sh` | 从 HF Hub 下载 cache → 解压 → 激活 | ~3-5 min |
+| 重入容器 | `setup_env.sh` | 检测到本地 env 已存在 → 直接激活 | ~10 s |
+
+> 旧版用 Network Volume 缓存的方式已废弃。HF Hub 的好处是任何 pod 不需 mount network volume 即可拉取，pod-to-pod 速率快。
 
 ## 快速开始
 
@@ -121,19 +126,22 @@ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=1 \
 - 如果 `ens1` 不对，用 `ip link show` 找高速网卡名
 - 跨节点的 NCCL network buffer 属于 `ncclMemPersist`（suspend 不会释放），这正是多节点测量的价值
 
-## 使用 SCP 缓存（无 Network Volume）
-
-如果没有 Network Volume，可以本地保存 `verl_env.tar.zst` 缓存，新机器 SCP 上去：
+## 缓存重建（HF cache 损坏或要更新依赖时）
 
 ```bash
-# 本地 → 新机器
-scp -P <PORT> -i ~/.ssh/id_ed25519 /path/to/verl_env.tar.zst root@<HOST>:/root/
-
-# 新机器上
-git clone ... /root/verl
-git clone ... /root/verl-deploy
-bash /root/verl-deploy/setup_env.sh  # 自动检测 /root/verl_env.tar.zst 并恢复
+# 在任一 pod 上执行（pod 出口带宽快，HF 上传 3-5 min）
+bash /root/verl-deploy/rebuild_env.sh /root/verl
 ```
+
+会完整跑：conda create → pip 装全部依赖 → 编译 TE/Apex/flash-attn → 打包 → 推送到
+`xiefan46/verl-env-cache`。完成后所有新 pod 跑 `setup_env.sh` 即可拉新版本。
+
+```bash
+# 只重建本地，不推送 HF
+SKIP_HF_UPLOAD=1 bash rebuild_env.sh
+```
+
+首次运行会要求 `hf auth login` — 准备好 [Write token](https://huggingface.co/settings/tokens) 粘贴。
 
 ## 选项
 
@@ -141,8 +149,11 @@ bash /root/verl-deploy/setup_env.sh  # 自动检测 /root/verl_env.tar.zst 并�
 # 自定义 verl 路径（默认 /root/verl）
 bash setup_env.sh /path/to/verl
 
-# 强制重新安装（忽略缓存）
-FORCE_INSTALL=1 bash setup_env.sh /root/verl
+# 强制重新解压（删本地 env，重新从 HF 拉/解压）
+FORCE_RESTORE=1 bash setup_env.sh
+
+# 自定义缓存仓库
+HF_CACHE_REPO=user/repo bash setup_env.sh
 ```
 
 ## 监控
@@ -182,9 +193,10 @@ watch -n 1 nvidia-smi
 
 ## 环境说明
 
-- **Python**: 3.12 (conda via Miniforge)
+- **Python**: 3.11 (conda via Miniforge)
 - **环境位置**: `/opt/conda/envs/verl` (Container Disk，高速 IO)
-- **缓存位置**: `/workspace/verl_cache/verl_env.tar.zst` (Network Volume，跨重启持久化)
+- **缓存 source of truth**: HF Hub dataset `xiefan46/verl-env-cache` (private)
+- **本地缓存路径**: `/root/verl_cache/verl_env.tar.zst` (~4.7 GB)
 - **verl 安装方式**: editable install (`pip install --no-deps -e .`)，修改代码无需重装
-- **Megatron 依赖**: mbridge + megatron-core + Transformer Engine + Apex（自动编译安装）
+- **Megatron 依赖**: mbridge + megatron-core + Transformer Engine + Apex（包含在 cache 中）
 - **依赖版本参考**: [verl 官方 Dockerfile](https://github.com/verl-project/verl/blob/main/docker/Dockerfile.stable.vllm)，修改依赖前务必对照确保一致
