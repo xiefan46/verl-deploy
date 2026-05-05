@@ -6,7 +6,8 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 
 | 脚本 | 用途 |
 |------|------|
-| `setup_env.sh` | 一键搭建 verl conda 环境（含 PyTorch、vLLM、Megatron、TE、Apex） |
+| `setup_env.sh` | 从 HF Hub 缓存快速恢复 verl 环境（~3-5 min） |
+| `rebuild_env.sh` | 从零完整重建 verl 环境并推送到 HF Hub（~25-35 min，cache 丢失或更新时用） |
 | `upgrade_nccl.sh` | 升级 NCCL 到 2.29.7+ 以支持 ncclCommSuspend/Resume |
 | `download_models.sh` | 下载 HF 模型到本地，支持 Network Volume 缓存 |
 
@@ -14,14 +15,29 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 
 - **基础镜像**: `runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04`
 - **conda 环境**: `/opt/conda/envs/verl` (Python 3.11)
-- **缓存**: `/workspace/verl_cache/verl_env.tar.zst` (Network Volume) 或 `/root/verl_env.tar.zst` (SCP 上传)
+- **环境缓存** (source of truth): HF Hub dataset `xiefan46/verl-env-cache` (private)
+- **本地解压目录**: `/root/verl_cache/verl_env.tar.zst`
 - **verl 仓库**: 默认 `/root/verl`，editable install
 
-## setup_env.sh 三条路径
+## setup_env.sh
 
-1. **本地已存在**（重入同一容器）：跳过安装，重新链接 verl，补装缺失依赖
-2. **从缓存恢复**（新容器，有缓存）：解压 → 补装依赖 → 链接 verl → ~1-2 min
-3. **完整安装**（无缓存）：conda create → pip install 全部依赖 → 编译 TE/Apex → ~20-30 min
+简化的两条路径（从 HF Hub 拉缓存）：
+
+1. **本地 env 已存在**（重入同一容器）：重新链接 verl 即可
+2. **本地 env 不存在**：本地有 archive 就用本地，否则从 HF 下载 → 解压 → 链接 verl
+
+如果 HF cache 损坏或不存在，会提示运行 `rebuild_env.sh`。
+
+## rebuild_env.sh
+
+完整重建 + 推送 HF 的独立脚本，四步：
+
+1. 完整安装（conda create + pip install + 编译 TE/Apex/flash-attn）~20-30 min
+2. 链接 verl + 准备数据 + 验证
+3. 打包压缩成 `tar.zst`
+4. 推送到 HF Hub（pod 出口带宽快，~3-5 min）
+
+`SKIP_HF_UPLOAD=1 bash rebuild_env.sh` 只构建本地不推送。
 
 关键设计：verl editable install 放在所有依赖（包括 TE/Apex 编译）之后，避免被覆盖。
 
