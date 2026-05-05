@@ -9,7 +9,7 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 | `setup_env.sh` | 从 HF Hub 缓存快速恢复 verl 环境（~3-5 min） |
 | `rebuild_env.sh` | 从零完整重建 verl 环境并推送到 HF Hub（~25-35 min，cache 丢失或更新时用） |
 | `upgrade_nccl.sh` | 升级 NCCL 到 2.29.7+ 以支持 ncclCommSuspend/Resume |
-| `download_models.sh` | 下载 HF 模型到本地，支持 Network Volume 缓存 |
+| `download_models.sh` | 下载 HF 模型到本地 |
 
 ## 环境配置
 
@@ -47,12 +47,11 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 
 ## download_models.sh
 
-下载 HF 模型到 `${HOME}/models/`，支持 Network Volume 缓存（`/workspace/models_cache/`）。
+下载 HF 模型到 `${HOME}/models/`。
 
-三条路径（类似 setup_env.sh）：
+两条路径：
 1. **本地已存在**（`${HOME}/models/` 有 safetensors）：跳过
-2. **Network Volume 有缓存**（`/workspace/models_cache/`）：复制到本地
-3. **都没有**：从 HuggingFace 下载 → 保存本地 → 缓存到 Network Volume
+2. **从 HuggingFace 下载**：保存到本地
 
 ```bash
 # 下载默认模型（Async OPD 用的 3 个模型）
