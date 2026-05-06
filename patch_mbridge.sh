@@ -67,10 +67,12 @@ $PIP install -e "$MBRIDGE_LOCAL_DIR" --no-deps --quiet
 # ─── 4. 验证补丁生效 ───
 log "验证补丁..."
 "$PY" -c "
-import inspect, mbridge, os
+import inspect, mbridge
 from mbridge.models.qwen3_vl.utils import split_deepstack_embs
 
-print(f'mbridge install path: {os.path.dirname(mbridge.__file__)}')
+# editable install (PEP 660) 下 mbridge.__file__ 可能是 None，用 __path__ 拿目录
+pkg_path = list(mbridge.__path__)[0] if hasattr(mbridge, '__path__') else mbridge.__file__
+print(f'mbridge install path: {pkg_path}')
 src = inspect.getsource(split_deepstack_embs)
 guard_block = src.split('return')[0]
 if 'deepstack_visual_embeds is None' not in guard_block:
