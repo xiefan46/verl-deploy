@@ -10,6 +10,7 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 | `rebuild_env.sh` | 从零完整重建 verl 环境并推送到 HF Hub（~25-35 min，cache 丢失或更新时用） |
 | `upgrade_nccl.sh` | 升级 NCCL 到 2.29.7+ 以支持 ncclCommSuspend/Resume |
 | `download_models.sh` | 下载 HF 模型到本地 |
+| `patch_mbridge.sh` | 卸载 cache 自带的官方 mbridge，editable install fork 仓库（修 qwen3_vl 文本-only 崩溃 bug，详见 ISEEKYAN/mbridge#47） |
 
 ## 环境配置
 
@@ -63,6 +64,27 @@ bash download_models.sh Qwen/Qwen3-VL-2B-Instruct Qwen/Qwen3-0.6B
 ```
 
 首次运行会提示输入 HF token（从 https://huggingface.co/settings/tokens 获取）。
+
+## patch_mbridge.sh
+
+`setup_env.sh` 用 HF cache 装的是官方 `ISEEKYAN/mbridge@641a5a0`，这个 commit 有 bug：mixed text+image 训练时，全文本 microbatch 会在 `qwen3_vl/utils.py:split_deepstack_embs` 崩 (`'NoneType' object is not iterable`)。详见 [ISEEKYAN/mbridge#47](https://github.com/ISEEKYAN/mbridge/issues/47)。
+
+修复在 fork [`xiefan46/mbridge` 的 `fix/qwen3vl-text-only-deepstack` 分支](https://github.com/xiefan46/mbridge/tree/fix/qwen3vl-text-only-deepstack)（基于 641a5a0 + 一行 guard + 4 个回归测试）。
+
+```bash
+# setup_env.sh 之后跑这个
+bash patch_mbridge.sh
+
+# 自定义 ref（commit 或别的分支）
+MBRIDGE_REF=ef5f92e bash patch_mbridge.sh
+MBRIDGE_REPO=https://github.com/foo/bar.git MBRIDGE_REF=main bash patch_mbridge.sh
+```
+
+脚本流程：
+1. 卸载现有 mbridge
+2. clone fork 到 `${MBRIDGE_LOCAL_DIR}` (默认 `/root/mbridge`)
+3. `pip install -e .` (editable，改代码不用重装)
+4. 校验 `split_deepstack_embs` 源码包含 `deepstack_visual_embeds is None` guard，没有就报错
 
 ## 常见问题
 

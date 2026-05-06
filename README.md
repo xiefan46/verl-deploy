@@ -29,6 +29,7 @@ git clone -b async-opd https://github.com/xiefan46/verl.git /root/verl
 git clone https://github.com/xiefan46/verl-deploy.git /root/verl-deploy
 bash /root/verl-deploy/setup_env.sh /root/verl
 source ~/.bashrc && conda activate verl
+bash /root/verl-deploy/patch_mbridge.sh    # 修 qwen3_vl text-only 崩溃 bug
 bash /root/verl-deploy/download_models.sh
 tmux new -s verl
 bash /root/verl/tests/special_e2e/run_fully_async_policy_opd.sh
