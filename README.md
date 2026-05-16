@@ -17,8 +17,12 @@ RunPod 一键部署 verl 训练环境。
 | 重建 cache | `rebuild_env.sh` | 完整安装 → 打包 → 推送 HF Hub | ~25-35 min |
 | 日常启动 | `setup_env.sh` | 从 HF Hub 下载 cache → 解压 → 激活 | ~3-5 min |
 | 重入容器 | `setup_env.sh` | 检测到本地 env 已存在 → 直接激活 | ~10 s |
+| 装 MagiAttention | `setup_magi.sh` | 从 HF Hub 下载预编译 wheel → pip install | ~1-2 min |
+| 重建 Magi cache | `rebuild_magi.sh` | 源码编译 (Hopper) → 构建 wheel → 推送 HF Hub | ~10-20 min |
 
 > 旧版用 Network Volume 缓存的方式已废弃。HF Hub 的好处是任何 pod 不需 mount network volume 即可拉取，pod-to-pod 速率快。
+>
+> MagiAttention cache 单独用 dataset `xiefan46/magi-env-cache`（避免污染 verl env cache）。
 
 ## 快速开始
 

@@ -8,6 +8,8 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 |------|------|
 | `setup_env.sh` | 从 HF Hub 缓存快速恢复 verl 环境（~3-5 min） |
 | `rebuild_env.sh` | 从零完整重建 verl 环境并推送到 HF Hub（~25-35 min，cache 丢失或更新时用） |
+| `setup_magi.sh` | 从 HF Hub 缓存装好 MagiAttention（~1-2 min, 走预编译 wheel） |
+| `rebuild_magi.sh` | 从源码编译 MagiAttention 并推送到 HF Hub（~10-20 min on Hopper, cache 失效时用） |
 | `upgrade_nccl.sh` | 升级 NCCL 到 2.29.7+ 以支持 ncclCommSuspend/Resume |
 | `download_models.sh` | 下载 HF 模型到本地 |
 | `patch_mbridge.sh` | 卸载 cache 自带的官方 mbridge，editable install fork 仓库（修 qwen3_vl 文本-only 崩溃 bug，详见 ISEEKYAN/mbridge#47） |
@@ -41,6 +43,24 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 `SKIP_HF_UPLOAD=1 bash rebuild_env.sh` 只构建本地不推送。
 
 关键设计：verl editable install 放在所有依赖（包括 TE/Apex 编译）之后，避免被覆盖。
+
+## setup_magi.sh / rebuild_magi.sh
+
+MagiAttention 不在 PyPI, 只能从源码编译 (Hopper 上 10-20 min)。镜像 verl env cache 模式:
+
+- `setup_magi.sh`: 从 HF Hub `xiefan46/magi-env-cache` 拉预编译 wheel → `pip install` (~1-2 min)
+- `rebuild_magi.sh`: clone + submodule init + `pip install --no-build-isolation .` → 构建 wheel → 推到 HF (~10-20 min)
+
+依赖 wheel 名: `magi_attention.whl` (固定名, 不带版本号, 方便 setup 脚本下载)。
+
+环境变量:
+- `FORCE_REINSTALL=1 bash setup_magi.sh` — 卸载现有 + 重新下载装 (升级 / cache 损坏)
+- `SKIP_HF_UPLOAD=1 bash rebuild_magi.sh` — 只构建本地
+- `MAGI_BRANCH=main bash rebuild_magi.sh` — 指定分支 (默认 main)
+
+**仅支持 Hopper (H100 / H200)**。Ampere / Blackwell 需要额外 env vars (`MAGI_ATTENTION_PREBUILD_FFA=0` 等), 当前脚本不覆盖。
+
+依赖: `setup_magi.sh` 需要 `setup_env.sh` 先建好 verl conda env。
 
 ## upgrade_nccl.sh
 
