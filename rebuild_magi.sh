@@ -117,6 +117,11 @@ git submodule update --init --recursive
 log "[2/4] 安装依赖 + 编译 magi_attention (10-20 min on Hopper)..."
 $PIP install -r requirements.txt --quiet
 
+# Magi utils/__init__.py 间接 import debugpy (dev tool, 没在 requirements 里).
+# Setup.py 的 prebuild FFA JIT 阶段会 import magi_attention 给 JIT 预热,
+# 这时缺 debugpy 会 fail. 装上避免 prebuild step 挂.
+$PIP install debugpy --quiet
+
 # RunPod 标准 image 是 PyTorch 2.8.0 + CUDA 12.8.1, 但 Magi setup.py 在 CUDA 13
 # 之下会 raise RuntimeError 阻止 build。Hopper 上影响是 WGMMA 同步, 性能下降
 # ~10-20%, 不影响功能 / 数值正确性 / tree-vs-dense 比例 (我们 demo 关注的指标)。
