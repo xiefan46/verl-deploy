@@ -126,18 +126,38 @@ $PIP install debugpy --quiet
 # 之下会 raise RuntimeError 阻止 build。Hopper 上影响是 WGMMA 同步, 性能下降
 # ~10-20%, 不影响功能 / 数值正确性 / tree-vs-dense 比例 (我们 demo 关注的指标)。
 # 长期 (V2) 建议切 NGC 25.10 镜像 (CUDA 13.0), 这里先 bypass。
-# 用户显式设了变量则 honor, 否则脚本自动设。
 export MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12="${MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12:-1}"
+
+# Magi 还有一个 magi_attn_comm 扩展, 是 internode IBGDA/RDMA 的 GroupCast/
+# GroupReduce 内核 (跨节点 CP 用)。需要 infiniband header (libmlx5-dev),
+# RunPod 标准 image 没装。我们 V1 单 GPU + V3 单节点 multi-DP 都不需要这个
+# 内核, 跳过即可。V3+ 真要跨节点 CP 时再装 libmlx5-dev 并去掉这个 flag。
+export MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD="${MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD:-1}"
+
 log "  MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12=${MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12} (绕过 CUDA 13 check)"
+log "  MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD=${MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD} (跳过 internode comm 内核)"
 
 BUILD_START=$SECONDS
+LAST_NINJA=0
+# Filter: 显示 ninja [N/M] 进度 + Magi 关键阶段 + 错误/警告。
+# Ninja 编译时每个 .cu 文件一行 [n/total], 看到数字递增就知道在跑。
 $PIP install --no-build-isolation . 2>&1 \
     | while IFS= read -r line; do
+        PRINT=0
         case "$line" in
-            *"Building"*|*"building"*|*"compiling"*|*".cu"*|*".cpp"*|*"linking"*|*"Linking"*|*"Successfully"*|*"error"*|*"Error"*)
-                echo -e "${GREEN}[magi-build $(( SECONDS - BUILD_START ))s]${RESET} $line"
-                ;;
+            # ninja progress like "[15/238] /usr/local/cuda/bin/nvcc ..."
+            \[*/*\]*) PRINT=1 ;;
+            # pip / setuptools milestones
+            *"Building wheel"*|*"Successfully built"*|*"Successfully installed"*) PRINT=1 ;;
+            # magi-specific milestones (prebuild, comm build phase headers, etc.)
+            *"Building magi_attn"*|*"Prebuilding"*|*"Generating "*|*"Compiling "*|*"Linking "*) PRINT=1 ;;
+            # errors and warnings (always show)
+            *"error:"*|*"Error:"*|*"ERROR"*|*"fatal"*|*"Failed"*|*"failed"*) PRINT=1 ;;
+            *"warning:"*|*"Warning:"*) PRINT=1 ;;
         esac
+        if [ "$PRINT" = "1" ]; then
+            echo -e "${GREEN}[magi-build $(( SECONDS - BUILD_START ))s]${RESET} $line"
+        fi
     done
 log "  编译完成 ($((SECONDS - BUILD_START))s)"
 
