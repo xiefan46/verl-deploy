@@ -117,6 +117,14 @@ git submodule update --init --recursive
 log "[2/4] 安装依赖 + 编译 magi_attention (10-20 min on Hopper)..."
 $PIP install -r requirements.txt --quiet
 
+# RunPod 标准 image 是 PyTorch 2.8.0 + CUDA 12.8.1, 但 Magi setup.py 在 CUDA 13
+# 之下会 raise RuntimeError 阻止 build。Hopper 上影响是 WGMMA 同步, 性能下降
+# ~10-20%, 不影响功能 / 数值正确性 / tree-vs-dense 比例 (我们 demo 关注的指标)。
+# 长期 (V2) 建议切 NGC 25.10 镜像 (CUDA 13.0), 这里先 bypass。
+# 用户显式设了变量则 honor, 否则脚本自动设。
+export MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12="${MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12:-1}"
+log "  MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12=${MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12} (绕过 CUDA 13 check)"
+
 BUILD_START=$SECONDS
 $PIP install --no-build-isolation . 2>&1 \
     | while IFS= read -r line; do
