@@ -112,15 +112,26 @@ log "  初始化 submodule (CUTLASS + Flash-Attention fork)..."
 git submodule update --init --recursive
 
 # ──────────────────────────────────────────────────────────
-# [2/4] 安装依赖 + 编译
+# [2/4] 安装依赖
 # ──────────────────────────────────────────────────────────
-log "[2/4] 安装依赖 + 编译 magi_attention (10-20 min on Hopper)..."
+log "[2/4] 安装依赖..."
 $PIP install -r requirements.txt --quiet
 
 # Magi utils/__init__.py 间接 import debugpy (dev tool, 没在 requirements 里).
 # Setup.py 的 prebuild FFA JIT 阶段会 import magi_attention 给 JIT 预热,
 # 这时缺 debugpy 会 fail. 装上避免 prebuild step 挂.
 $PIP install debugpy --quiet
+
+# ──────────────────────────────────────────────────────────
+# [3/4] 构建 AOT wheel via setup.py bdist_wheel + 安装
+# ──────────────────────────────────────────────────────────
+#
+# 为什么用 setup.py bdist_wheel 不用 `pip install .`:
+# Magi setup.py 里 prebuild_ffa_kernels() 只在 `is_in_wheel_stage()` 触发,
+# 而该函数判定为 `"wheel" in sys.argv[1]`。直接调 `python setup.py bdist_wheel`
+# sys.argv[1] = "bdist_wheel" → 命中。`pip install .` 走 PEP 517 backend,
+# sys.argv[1] 可能不撞 "wheel" + pip 还会缓存 wheel 到 ~/.cache/pip/wheels/
+# 阻止重 build, 实测会 skip prebuild → 出来的 wheel 没 AOT .so → runtime JIT。
 
 # RunPod 标准 image 是 PyTorch 2.8.0 + CUDA 12.8.1, 但 Magi setup.py 在 CUDA 13
 # 之下会 raise RuntimeError 阻止 build。Hopper 上影响是 WGMMA 同步, 性能下降
@@ -134,35 +145,41 @@ export MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12="${MAGI_ATTENTION_ALLOW_BUILD_WITH
 # 内核, 跳过即可。V3+ 真要跨节点 CP 时再装 libmlx5-dev 并去掉这个 flag。
 export MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD="${MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD:-1}"
 
-# AOT 预编译 FFA kernel — 默认开。
-# 不开的话, runtime 每个新 (head_dim, num_heads, dtype) 组合都会 JIT 编译,
-# 第一次跑 ~1-3 min/shape, 用户体验差。开了以后 setup.py 把预设 shape
-# (常见 head_dim 64/128, num_heads, bf16/fp16) 一次性 AOT 进 .so, 走
-# pip install 时一次性付完, wheel push 到 HF 后所有 pod 受益。
-# 代价: build 时间 ~30 min (vs 17s), wheel 体积 ~200-500MB (vs 32MB)。
-# 不常见 shape (e.g. H.T5 用的 D=32) 仍走 JIT, 但 e2e 训练用的 model shape
-# (Qwen2.5: D=64/128) 在预设集里。
+# AOT 预编译 FFA kernel — 默认开 (Magi setup.py 自己也默认 "1")。
+# 不开的话, runtime 每个新 (head_dim, num_heads, dtype) 组合都会 JIT 编译
+# 1-3 min/shape, 用户体验差。开了以后 setup.py 把预设 shape (head_dim
+# 64/128, bf16/fp16, fwd+bwd, atomic/non-atomic, 共 32 个 .so) 一次性 AOT
+# 进 magi_attention/lib/, wheel push 到 HF 后所有 pod 拿到的就是预编译的,
+# 不再 JIT。Qwen2.5 的 head_dim 是 64/128 在预设集里全覆盖。
+# 不常见 shape (e.g. D=32) 仍会 runtime JIT, 但 e2e 训练用不到。
+#
+# 代价: build 时间 5-30 min (取决于 ~/.cache/magi_attention/ 是否已有 cache),
+# wheel 体积 ~30MB (.so 文件压缩率很高)。
 export MAGI_ATTENTION_PREBUILD_FFA="${MAGI_ATTENTION_PREBUILD_FFA:-1}"
+
+# 并发度 — Hopper 编 FFA kernel 每个 nvcc 吃 4-8GB RAM, 容器内存有限时降并发。
+# 默认 = CPU 核 × 0.9, RunPod 上 64+ 核可能 OOM, 锁到 4 比较稳。
+export MAGI_ATTENTION_PREBUILD_FFA_JOBS="${MAGI_ATTENTION_PREBUILD_FFA_JOBS:-4}"
+export MAX_JOBS="${MAX_JOBS:-4}"
 
 log "  MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12=${MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12} (绕过 CUDA 13 check)"
 log "  MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD=${MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD} (跳过 internode comm 内核)"
-log "  MAGI_ATTENTION_PREBUILD_FFA=${MAGI_ATTENTION_PREBUILD_FFA} (AOT 预编译 FFA, build 慢但 runtime 不 JIT)"
+log "  MAGI_ATTENTION_PREBUILD_FFA=${MAGI_ATTENTION_PREBUILD_FFA} (AOT 预编译 FFA, 32 个 .so 进 wheel)"
+log "  MAGI_ATTENTION_PREBUILD_FFA_JOBS=${MAGI_ATTENTION_PREBUILD_FFA_JOBS} (并发 nvcc, 防 OOM)"
+
+# 清干净任何陈旧的 dist/ 跟 pip wheel cache, 防止 pip 复用旧 wheel 阻止 prebuild
+log "[3/4] 构建 AOT wheel (setup.py bdist_wheel)..."
+rm -rf dist/ ~/.cache/pip/wheels/ 2>/dev/null || true
 
 BUILD_START=$SECONDS
-LAST_NINJA=0
 # Filter: 显示 ninja [N/M] 进度 + Magi 关键阶段 + 错误/警告。
-# Ninja 编译时每个 .cu 文件一行 [n/total], 看到数字递增就知道在跑。
-$PIP install --no-build-isolation . 2>&1 \
+"$PY" setup.py bdist_wheel 2>&1 \
     | while IFS= read -r line; do
         PRINT=0
         case "$line" in
-            # ninja progress like "[15/238] /usr/local/cuda/bin/nvcc ..."
             \[*/*\]*) PRINT=1 ;;
-            # pip / setuptools milestones
-            *"Building wheel"*|*"Successfully built"*|*"Successfully installed"*) PRINT=1 ;;
-            # magi-specific milestones (prebuild, comm build phase headers, etc.)
+            *"Building wheel"*|*"Prebuilt:"*|*"Successfully built"*|*"Successfully installed"*|*"adding 'magi_attention/lib/"*) PRINT=1 ;;
             *"Building magi_attn"*|*"Prebuilding"*|*"Generating "*|*"Compiling "*|*"Linking "*) PRINT=1 ;;
-            # errors and warnings (always show)
             *"error:"*|*"Error:"*|*"ERROR"*|*"fatal"*|*"Failed"*|*"failed"*) PRINT=1 ;;
             *"warning:"*|*"Warning:"*) PRINT=1 ;;
         esac
@@ -172,27 +189,28 @@ $PIP install --no-build-isolation . 2>&1 \
     done
 log "  编译完成 ($((SECONDS - BUILD_START))s)"
 
-# 验证
-installed_magi || err "magi_attention 编译完成但 import 失败。检查 ${MAGI_DIR}"
-VERSION=$("$PY" -c "import magi_attention; print(magi_attention.__version__)")
-log "  magi_attention ${VERSION} 编译验证通过"
+# 找出 dist/ 里刚 build 的 wheel
+BUILT_WHEEL=$(ls "${MAGI_DIR}"/dist/magi_attention-*.whl 2>/dev/null | head -1)
+[ -f "$BUILT_WHEEL" ] || err "wheel 构建失败, dist/ 里没找到 magi_attention-*.whl"
 
-# ──────────────────────────────────────────────────────────
-# [3/4] 构建 wheel (用于上传)
-# ──────────────────────────────────────────────────────────
-log "[3/4] 构建可分发 wheel..."
+# 验证 wheel 内含 AOT .so (V1 必须有, 否则 runtime 会 JIT)
+SO_COUNT=$(unzip -l "$BUILT_WHEEL" 2>/dev/null | grep -c "magi_attention/lib/.*\.so" || true)
+[ "$SO_COUNT" -ge 32 ] || warn "wheel 只有 ${SO_COUNT} 个 .so (期望 ≥32), AOT prebuild 可能没真触发, runtime 仍会 JIT"
+log "  wheel 含 ${SO_COUNT} 个预编译 .so"
+
+# 复制到 CACHE_DIR 并起固定名字, 方便上传 + setup_magi.sh 下载
 mkdir -p "$CACHE_DIR"
-rm -f "$CACHE_DIR"/magi_attention-*.whl  # 清旧 wheel
-
-WHEEL_START=$SECONDS
-$PIP wheel . --no-deps --no-build-isolation -w "$CACHE_DIR" --quiet
-BUILT_WHEEL=$(ls "$CACHE_DIR"/magi_attention-*.whl | head -1)
-[ -f "$BUILT_WHEEL" ] || err "wheel 构建失败"
-
-# 拷成固定名字方便上传 / 下载
+rm -f "$CACHE_DIR"/magi_attention-*.whl "$CACHE_DIR/$MAGI_WHEEL_NAME"
+cp "$BUILT_WHEEL" "${CACHE_DIR}/${MAGI_WHEEL_NAME}"
 WHEEL_FIXED="${CACHE_DIR}/${MAGI_WHEEL_NAME}"
-cp "$BUILT_WHEEL" "$WHEEL_FIXED"
-log "  wheel: $(basename "$BUILT_WHEEL"), 大小 $(du -sh "$WHEEL_FIXED" | cut -f1), 用时 $((SECONDS - WHEEL_START))s"
+log "  wheel: $(basename "$BUILT_WHEEL"), 大小 $(du -sh "$WHEEL_FIXED" | cut -f1)"
+
+# 安装到当前 env 验证 import
+log "  pip install wheel 验证..."
+$PIP install --force-reinstall --no-deps "$WHEEL_FIXED" --quiet
+installed_magi || err "wheel 装上后 import 失败"
+VERSION=$("$PY" -c "import magi_attention; print(magi_attention.__version__)")
+log "  magi_attention ${VERSION} 验证通过"
 
 # ──────────────────────────────────────────────────────────
 # [4/4] 推送 HF
