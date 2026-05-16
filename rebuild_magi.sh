@@ -134,8 +134,19 @@ export MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12="${MAGI_ATTENTION_ALLOW_BUILD_WITH
 # 内核, 跳过即可。V3+ 真要跨节点 CP 时再装 libmlx5-dev 并去掉这个 flag。
 export MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD="${MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD:-1}"
 
+# AOT 预编译 FFA kernel — 默认开。
+# 不开的话, runtime 每个新 (head_dim, num_heads, dtype) 组合都会 JIT 编译,
+# 第一次跑 ~1-3 min/shape, 用户体验差。开了以后 setup.py 把预设 shape
+# (常见 head_dim 64/128, num_heads, bf16/fp16) 一次性 AOT 进 .so, 走
+# pip install 时一次性付完, wheel push 到 HF 后所有 pod 受益。
+# 代价: build 时间 ~30 min (vs 17s), wheel 体积 ~200-500MB (vs 32MB)。
+# 不常见 shape (e.g. H.T5 用的 D=32) 仍走 JIT, 但 e2e 训练用的 model shape
+# (Qwen2.5: D=64/128) 在预设集里。
+export MAGI_ATTENTION_PREBUILD_FFA="${MAGI_ATTENTION_PREBUILD_FFA:-1}"
+
 log "  MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12=${MAGI_ATTENTION_ALLOW_BUILD_WITH_CUDA12} (绕过 CUDA 13 check)"
 log "  MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD=${MAGI_ATTENTION_SKIP_MAGI_ATTN_COMM_BUILD} (跳过 internode comm 内核)"
+log "  MAGI_ATTENTION_PREBUILD_FFA=${MAGI_ATTENTION_PREBUILD_FFA} (AOT 预编译 FFA, build 慢但 runtime 不 JIT)"
 
 BUILD_START=$SECONDS
 LAST_NINJA=0
