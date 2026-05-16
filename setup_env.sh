@@ -171,7 +171,35 @@ print('\n=== All checks passed! ===')
 "
 
 echo -e "\n${BOLD}${GREEN}========================================${RESET}"
-echo -e "${BOLD}${GREEN}  环境就绪${RESET}"
+echo -e "${BOLD}${GREEN}  verl 环境就绪${RESET}"
+echo -e "${BOLD}${GREEN}========================================${RESET}"
+
+# ─── 7. MagiAttention (按需自动安装) ───
+# 检测 verl 仓库是否含 Magi backend 文件 — 是就自动装 Magi。
+# 没有 (e.g. main 分支 / 其他 feature 分支) 跳过。
+# 强制跳过: SKIP_MAGI=1 bash setup_env.sh
+MAGI_BACKEND_FILE="${VERL_ROOT}/verl/experimental/tree_training/_magi_backend.py"
+if [ "${SKIP_MAGI:-}" = "1" ]; then
+    log "SKIP_MAGI=1, 跳过 MagiAttention 安装"
+elif [ -f "$MAGI_BACKEND_FILE" ]; then
+    log "检测到 Magi backend (${MAGI_BACKEND_FILE##*tree_training/}), 自动安装 MagiAttention..."
+    SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+    SETUP_MAGI="${SCRIPT_DIR}/setup_magi.sh"
+    if [ -f "$SETUP_MAGI" ]; then
+        # HF token 已经在上面 ensure_hf_login 里 cache 过 (~/.cache/huggingface/token),
+        # setup_magi.sh 里的 ensure_hf_login 直接命中, 不会再提示。
+        bash "$SETUP_MAGI"
+    else
+        warn "$SETUP_MAGI 不存在, 跳过 Magi 安装 (手动: bash $SCRIPT_DIR/setup_magi.sh)"
+    fi
+else
+    log "verl 仓库不含 Magi backend 文件, 跳过 MagiAttention 安装"
+    log "  (如果切到含 Magi 的分支后想装: bash $(dirname "$0")/setup_magi.sh)"
+fi
+
+echo -e "\n${BOLD}${GREEN}========================================${RESET}"
+echo -e "${BOLD}${GREEN}  全部就绪${RESET}"
 echo -e "${BOLD}${GREEN}========================================${RESET}"
 echo -e "\n${YELLOW}激活: source ~/.bashrc && conda activate ${ENV_NAME}${RESET}"
-echo -e "${YELLOW}重建 cache (HF 丢失时): bash rebuild_env.sh${RESET}\n"
+echo -e "${YELLOW}重建 verl cache (HF 丢失时): bash rebuild_env.sh${RESET}"
+echo -e "${YELLOW}重建 magi cache (HF 丢失时): bash rebuild_magi.sh${RESET}\n"

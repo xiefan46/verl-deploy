@@ -48,19 +48,25 @@ RunPod 一键部署 verl 训练环境的脚本集合。
 
 MagiAttention 不在 PyPI, 只能从源码编译 (Hopper 上 10-20 min)。镜像 verl env cache 模式:
 
-- `setup_magi.sh`: 从 HF Hub `xiefan46/magi-env-cache` 拉预编译 wheel → `pip install` (~1-2 min)
+- `setup_magi.sh`: 从 HF Hub `xiefan46/magi-env-cache` 拉预编译 wheel → `pip install` (~1-2 min)。如果 HF cache 不存在自动 fallback 到 `rebuild_magi.sh` 编译。
 - `rebuild_magi.sh`: clone + submodule init + `pip install --no-build-isolation .` → 构建 wheel → 推到 HF (~10-20 min)
 
 依赖 wheel 名: `magi_attention.whl` (固定名, 不带版本号, 方便 setup 脚本下载)。
+
+**setup_env.sh 自动 chain**: setup_env.sh 跑完后会**检测 `${VERL_ROOT}/verl/experimental/tree_training/_magi_backend.py` 是否存在**:
+- 存在 (用户在 magi 集成分支如 `local-bench-prep`) → 自动调用 setup_magi.sh, 一条命令搞定全部
+- 不存在 (main 分支等) → 跳过 Magi 安装
+- 强制跳过: `SKIP_MAGI=1 bash setup_env.sh`
+
+HF token 只输一次: setup_env.sh 里 `hf auth login` 之后 token 写到 `~/.cache/huggingface/token`, setup_magi.sh 里的 `ensure_hf_login` 直接命中 cached token, 不会再提示。
 
 环境变量:
 - `FORCE_REINSTALL=1 bash setup_magi.sh` — 卸载现有 + 重新下载装 (升级 / cache 损坏)
 - `SKIP_HF_UPLOAD=1 bash rebuild_magi.sh` — 只构建本地
 - `MAGI_BRANCH=main bash rebuild_magi.sh` — 指定分支 (默认 main)
+- `SKIP_MAGI=1 bash setup_env.sh` — 强制跳过 Magi 子步骤
 
 **仅支持 Hopper (H100 / H200)**。Ampere / Blackwell 需要额外 env vars (`MAGI_ATTENTION_PREBUILD_FFA=0` 等), 当前脚本不覆盖。
-
-依赖: `setup_magi.sh` 需要 `setup_env.sh` 先建好 verl conda env。
 
 ## upgrade_nccl.sh
 

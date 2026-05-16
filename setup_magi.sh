@@ -94,8 +94,14 @@ if [ ! -f "$WHEEL_PATH" ]; then
     mkdir -p "$CACHE_DIR"
     export HF_HUB_ENABLE_HF_TRANSFER=1
     SECONDS=0
-    if ! hf download --repo-type=dataset "$HF_CACHE_REPO" "$MAGI_WHEEL_NAME" --local-dir "$CACHE_DIR"; then
-        err "HF 下载失败。如果 cache 不存在或损坏，运行 'bash rebuild_magi.sh' 从源码编译并推送"
+    if ! hf download --repo-type=dataset "$HF_CACHE_REPO" "$MAGI_WHEEL_NAME" --local-dir "$CACHE_DIR" 2>/dev/null; then
+        warn "HF cache 不存在 (xiefan46/magi-env-cache 第一次用 / cache 失效)"
+        warn "自动 fallback 到源码编译 (Hopper 上 10-20 min, 完成后会自动推到 HF cache)"
+        SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+        REBUILD="${SCRIPT_DIR}/rebuild_magi.sh"
+        [ -f "$REBUILD" ] || err "rebuild_magi.sh 不存在: $REBUILD"
+        log "调用 rebuild_magi.sh ..."
+        exec bash "$REBUILD"   # exec 替换本 shell, rebuild_magi 跑完即完整安装好
     fi
     log "下载完成 (${SECONDS}s): $(du -sh "$WHEEL_PATH" | cut -f1)"
 else
