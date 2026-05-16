@@ -109,8 +109,9 @@ else
 fi
 
 # 4. 装依赖 (轻量, 大头是 nvshmem ~300MB)
-log "安装 MagiAttention 依赖 (nvshmem-cu12 + cutlass-dsl + ...)..."
-$PIP install --quiet "nvidia-nvshmem-cu12==3.4.5" "nvidia-cutlass-dsl==4.3.5" einops
+# debugpy: Magi utils/__init__.py 隐式 import 但没在 install_requires 声明
+log "安装 MagiAttention 依赖 (nvshmem-cu12 + cutlass-dsl + einops + debugpy)..."
+$PIP install --quiet "nvidia-nvshmem-cu12==3.4.5" "nvidia-cutlass-dsl==4.3.5" einops debugpy
 
 # 5. 装 wheel 本体
 log "安装 magi_attention wheel..."
