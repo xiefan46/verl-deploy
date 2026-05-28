@@ -41,21 +41,18 @@ PY="${ENV_DIR}/bin/python"
 #                                           magi_attention.common.AttnRanges
 #                                           magi_attention.common.enum.AttnMaskType
 #                                           magi_attention.meta.solver.dispatch_solver.DispatchConfig
-#   verl/models/mcore/prefix_tree_merge.py: calc_attn, dispatch, undispatch       (NEW API)
+#   verl/models/mcore/prefix_tree_merge.py:   calc_attn, dispatch, undispatch
 #   verl/models/transformers/monkey_patch.py: calc_attn, get_most_recent_key
-#   verl/workers/engine/fsdp/transformer_impl.py:
-#                                           magi_attn_flex_dispatch                (OLD API)
-#                                           magi_attn_flex_undispatch              (OLD API)
+#   verl/workers/engine/fsdp/transformer_impl.py: dispatch, undispatch
 #
-# REQUIRED_API_SYMBOLS = verl 代码导入的全部 magi_attention.api symbol
+# Note: Magi 1.1.0.post11 removed magi_attn_flex_undispatch; verl was migrated
+# to the new dispatch/undispatch names (verl commit 9a4e63f8).
 REQUIRED_API_SYMBOLS=(
     DistAttnConfig
     calc_attn
     dispatch
     get_most_recent_key
-    magi_attn_flex_dispatch
     magi_attn_flex_key
-    magi_attn_flex_undispatch
     undispatch
 )
 
