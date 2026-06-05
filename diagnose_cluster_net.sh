@@ -18,7 +18,13 @@ hostname
 ip route get 1.1.1.1 2>/dev/null || echo "(no default route)"
 
 hr "all ifaces (incl. DOWN / no IP)"
-ip -o link show | awk -F': ' '{print $2, $3}' | sed 's/<[^>]*>//' | column -t
+ip -o link show | awk -F': ' '{
+    name=$2; rest=$3;
+    sub(/@.*/, "", name);
+    match(rest, /state [A-Z]+/);
+    state = (RSTART ? substr(rest, RSTART+6, RLENGTH-6) : "?");
+    printf "  %-20s state=%s\n", name, state
+}'
 
 hr "all IPv4 addresses"
 ip -4 -o addr show | awk '{sub(/@.*/, "", $2); print $2, $4}'
