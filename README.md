@@ -133,6 +133,59 @@ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=1 \
 - 如果 `ens1` 不对，用 `ip link show` 找高速网卡名
 - 跨节点的 NCCL network buffer 属于 `ncclMemPersist`（suspend 不会释放），这正是多节点测量的价值
 
+### verl 训练多节点（Ray + setup_cluster.sh）
+
+跑 verl PPO/GRPO 训练（`trainer.nnodes > 1`）需要起 **Ray cluster** 而不是 torchrun。
+`setup_cluster.sh` 自动探测 RoCE/IB HCA + 所有高速 iface，写 NCCL env 到 `/root/verl_cluster_env.sh`，
+启动 Ray。两台 node 上各跑一次即可，IP / iface 名 / HCA 名都不用写死。
+
+**两台 node 上分别 setup（同上面 NCCL Profile 那节，注意分支换成你要测的 verl 分支）：**
+
+```bash
+git clone https://github.com/xiefan46/verl-deploy.git /root/verl-deploy
+git clone -b <verl-branch> https://github.com/xiefan46/verl.git /root/verl
+bash /root/verl-deploy/setup_env.sh /root/verl
+bash /root/verl-deploy/upgrade_nccl.sh
+bash /root/verl-deploy/download_models.sh <model_id>
+source ~/.bashrc && conda activate verl
+wandb login
+```
+
+**起 Ray cluster：**
+
+```bash
+# Node 0 (head):
+bash /root/verl-deploy/setup_cluster.sh head
+# 脚本打印 HEAD_IP=10.65.0.2 之类（你的 cluster 网内 IP）
+
+# Node 1+ (worker，每台一遍，IP 改成 head 打印的)：
+bash /root/verl-deploy/setup_cluster.sh worker 10.65.0.2
+```
+
+**Head node 上启动训练：**
+
+```bash
+source /root/verl_cluster_env.sh   # 把 NCCL env 引入当前 shell
+tmux new -s train
+NNODES=2 NGPUS_PER_NODE=8 bash <your_train_script>.sh
+```
+
+脚本自动做的事：
+- 探测所有 `ens*` / `ib*` + 10.x.x.x 段的 iface（默认 pattern，可 `IFACE_PATTERN=` 覆盖）
+- 探测 `/sys/class/infiniband/` 下所有 HCA，检查 port state（非 ACTIVE 会 warn）
+- Worker 起来前先 ping head，确认 cluster 网通
+- 写 `NCCL_SOCKET_IFNAME` + `NCCL_IB_HCA` + `NCCL_NVLS_ENABLE=0` 到 `$ENV_FILE`
+- `ray stop` 然后 `ray start`，幂等（同节点重跑无副作用）
+
+常用 env 覆盖：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `IFACE_PATTERN` | `^(ens\|ib)[0-9]+$` | iface 名正则，AWS/其它云可能要改 |
+| `IFACE_NET` | `10.` | 私网 IP 前缀，过滤掉公网/Docker NAT |
+| `RAY_PORT` | `6379` | Ray head port |
+| `ENV_FILE` | `/root/verl_cluster_env.sh` | NCCL env 落盘位置 |
+
 ## 缓存重建（HF cache 损坏或要更新依赖时）
 
 ```bash
