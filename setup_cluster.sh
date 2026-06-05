@@ -70,7 +70,10 @@ ENV_FILE="${ENV_FILE:-/root/verl_cluster_env.sh}"
 log "Step 1: discovering cluster network ifaces (pattern=$IFACE_PATTERN, net=${IFACE_NET}*)"
 
 mapfile -t IFACES < <(
-    ip -4 -o addr show | awk '{print $2, $4}' |
+    # $NF is the clean iface name (last field, after "scope ..."), which
+    # avoids the "@if<peer>" suffix that veth pairs show in $2 inside
+    # containerized RoCE setups.
+    ip -4 -o addr show | awk '{print $NF, $4}' |
         awk -v pat="$IFACE_PATTERN" -v net="$IFACE_NET" '
             $1 ~ pat && index($2, net) == 1 { print $1 }
         ' | sort -u
